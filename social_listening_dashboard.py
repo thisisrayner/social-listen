@@ -1,57 +1,31 @@
-# Shadee.Care – Social Listening Dashboard (v2 – keyword buckets)
+# Shadee.Care – Social Listening Dashboard (v3 – regex buckets)
 # ------------------------------------------------------------------
 # Streamlit app that visualises post activity scraped from Reddit &
-# YouTube (Excel export with one sheet per search‑phrase).  v2 adds:
-#   • keyword buckets (self‑blame, cost‑concern, work‑burnout)
-#   • per‑bucket daily counts + spike detection
-#   • sidebar filter to focus on specific buckets
+# YouTube (Excel export with one sheet per search‑phrase).
+# v3 upgrade: keyword buckets now use **regex** patterns so that close
+# variations (e.g. "hated myself", "can't afford", "burned‑out") are
+# captured without writing dozens of near‑duplicate phrases.
 # ------------------------------------------------------------------
 # HOW TO RUN LOCALLY
-#   1.  pip install streamlit pandas matplotlib openpyxl
-#   2.  streamlit run social_listening_dashboard.py
-#   3.  Upload the Excel file when prompted.
+#   1. pip install streamlit pandas matplotlib openpyxl
+#   2. streamlit run social_listening_dashboard.py
+#   3. Upload the Excel file when prompted.
 # ------------------------------------------------------------------
 
 import re
 import datetime as dt
-from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 import pandas as pd
 import streamlit as st
 
-# ---------- Keyword buckets ---------- #
-# Buckets map to lists of lowercase substrings.  Keep them short for
-# simple O(N·K) matching; upgrade to regex or spaCy later if needed.
-BUCKETS: Dict[str, List[str]] = {
-    "self_blame": [
-        "hate myself",
-        "everyone hate me",
-        "worthless",
-        "i'm a failure",
-        "no one cares",
-        "what's wrong with me",
-        "deserve to suffer",
-    ],
-    "cost_concern": [
-        "can't afford",
-        "too expensive",
-        "cost of therapy",
-        "insurance won't",
-        "money for help",
-        "cheap therapy",
-        "budget",
-    ],
-    "work_burnout": [
-        "burnt out",
-        "burned out",
-        "exhausted by work",
-        "quit my job",
-        "toxic workplace",
-        "overworked",
-        "deadlines",
-        "study burnout",
-    ],
+# ---------- Keyword bucket regexes ---------- #
+# Each bucket is a single **raw string regex** (ignore‑case).  Regex
+# lets us match plurals, tense changes, or words near each other.
+BUCKET_PATTERNS: Dict[str, str] = {
+    "self_blame": r"\b(hate(?:d|s)? myself|everyone hate(?:s|d)? me|worthless|i'?m a failure|no one cares|what'?s wrong with me|deserve(?:s)? to suffer)\b",
+    "cost_concern": r"\b(can'?t afford|too expensive|cost of therapy|insurance won'?t|money for help|cheap therapy|on a budget)\b",
+    "work_burnout": r"\b(burnt out|burned out|exhausted by work|quit(?:ting)? my job|toxic work(?:place)?|overworked|deadlines|study burnout)\b",
 }
 
 BUCKET_COLOURS = {
@@ -60,6 +34,9 @@ BUCKET_COLOURS = {
     "work_burnout": "🟩",
     "other": "⬜️",
 }
+
+# Pre‑compile for speed
+COMPILED = {k: re.compile(pat, re.I) for k, pat in BUCKET_PATTERNS.items()}
 
 # ---------- Helper functions ---------- #
 
@@ -86,18 +63,16 @@ def extract_subreddit(url: str):
 
 
 def detect_spikes(series: pd.Series, window: int = 7, sigma: float = 2.5):
-    """Return subset where value > rolling_mean + sigma*std."""
     roll_mean = series.rolling(window).mean()
     roll_std = series.rolling(window).std().fillna(0)
     return series[series > roll_mean + sigma * roll_std]
 
 
-# @st.cache_data ensures the bucket test runs only once per unique text
 @st.cache_data(show_spinner=False)
 def tag_bucket(text: str) -> str:
     text_low = text.lower()
-    for bucket, kw_list in BUCKETS.items():
-        if any(k in text_low for k in kw_list):
+    for bucket, pat in COMPILED.items():
+        if pat.search(text_low):
             return bucket
     return "other"
 
@@ -105,7 +80,7 @@ def tag_bucket(text: str) -> str:
 # ---------- Streamlit UI ---------- #
 
 st.set_page_config(page_title="Shadee Social Listening", layout="wide")
-st.title("🩺 Shadee.Care – Social Listening Dashboard")
+st.title("🩺 Shadee.Care – Social Listening Dashboard (regex edition)")
 
 uploaded = st.sidebar.file_uploader("Upload the Excel scrape (one sheet per search phrase)", type=["xlsx"])
 
@@ -113,11 +88,9 @@ if uploaded is None:
     st.info("⬅️ Upload an Excel file to begin.")
     st.stop()
 
+# Load all sheets
 xls = pd.ExcelFile(uploaded)
-raw_dfs = {
-    name: pd.read_excel(uploaded, sheet_name=name, header=2)
-    for name in xls.sheet_names
-}
+raw_dfs = {name: pd.read_excel(uploaded, sheet_name=name, header=2) for name in xls.sheet_names}
 
 phrase = st.sidebar.selectbox("Choose a sheet / search phrase", list(raw_dfs.keys()))
 df = raw_dfs[phrase].copy()
@@ -125,74 +98,58 @@ df = raw_dfs[phrase].copy()
 # ---------- Data cleaning ---------- #
 
 df["Post_dt"] = df.get("Post Date", pd.Series(dtype=str)).apply(parse_post_date)
-
 df["Subreddit"] = df.apply(lambda r: extract_subreddit(r.get("Post URL")), axis=1)
 
-# Tag each post into a bucket
 if "Post Content" not in df:
     df["Post Content"] = ""
+
+# Tag buckets via regex
 df["Bucket"] = df["Post Content"].fillna("").apply(tag_bucket)
 
 # Bucket filter
-selected_buckets = st.sidebar.multiselect(
+selected = st.sidebar.multiselect(
     "Filter keyword buckets",
-    options=list(BUCKETS.keys()) + ["other"],
-    default=list(BUCKETS.keys()),
+    options=list(BUCKET_PATTERNS.keys()) + ["other"],
+    default=list(BUCKET_PATTERNS.keys()),
 )
-if selected_buckets:
-    df = df[df["Bucket"].isin(selected_buckets)]
+if selected:
+    df = df[df["Bucket"].isin(selected)]
 
 # ---------- Metrics ---------- #
 col1, col2, col3 = st.columns(3)
 col1.metric("Posts", len(df))
 col2.metric("% Reddit", f"{(df['Platform']=='Reddit').mean()*100:.1f}%")
-col3.metric(
-    "Timespan",
-    f"{(df['Post_dt'].max() - df['Post_dt'].min()).days} days"
-    if df["Post_dt"].notna().any() else "n/a",
-)
+col3.metric("Timespan", f"{(df['Post_dt'].max() - df['Post_dt'].min()).days} d" if df["Post_dt"].notna().any() else "n/a")
 
-st.markdown(
-    "**Bucket legend:** " + "  ".join(f"{BUCKET_COLOURS.get(b, '⬜️')} {b}" for b in BUCKETS.keys())
-)
+st.markdown("**Bucket legend:** " + "  ".join(f"{BUCKET_COLOURS.get(b, '⬜️')} {b}" for b in BUCKET_PATTERNS))
 
 # ---------- Time‑series by bucket ---------- #
 
 if df["Post_dt"].notna().any():
     pivot = (
-        df.set_index("Post_dt")
-        .groupby("Bucket")
-        .resample("D")
-        .size()
-        .unstack(fill_value=0)
-        .T  # index = date
+        df.set_index("Post_dt").groupby("Bucket").resample("D").size().unstack(fill_value=0).T
     )
-    st.subheader("Daily post volume by bucket")
+    st.subheader("Daily post volume by bucket (regex matched)")
     st.line_chart(pivot)
 
-    # Spike detection per bucket
-    alerts = []
-    for bucket in pivot.columns:
-        spikes = detect_spikes(pivot[bucket])
-        for date, count in spikes.items():
-            alerts.append({
-                "date": date.date(),
-                "bucket": bucket,
-                "count": int(count),
-            })
+    # Spike detection
+    alerts = [
+        {"date": d.date(), "bucket": b, "count": int(c)}
+        for b in pivot.columns
+        for d, c in detect_spikes(pivot[b]).items()
+    ]
     if alerts:
         st.subheader("⚠️ Spike alerts")
         st.dataframe(pd.DataFrame(alerts))
 else:
-    st.warning("No date information in this sheet.")
+    st.warning("No date information.")
 
 # ---------- Top communities ---------- #
 
 st.subheader("Top communities")
 if (df["Platform"] == "Reddit").any():
-    top_subs = df["Subreddit"].value_counts().head(10)
     st.write("### Reddit")
-    st.bar_chart(top_subs)
+    st.bar_chart(df["Subreddit"].value_counts().head(10))
 
 if df["Platform"].str.contains("Youtube", case=False).any():
     def yt_channel(url):
@@ -202,19 +159,15 @@ if df["Platform"].str.contains("Youtube", case=False).any():
         return m.group(1) if m else None
 
     df["YT_channel"] = df.apply(lambda r: yt_channel(r.get("User URL")), axis=1)
-    top_yt = df["YT_channel"].value_counts().head(10)
     st.write("### YouTube channels")
-    st.bar_chart(top_yt)
+    st.bar_chart(df["YT_channel"].value_counts().head(10))
 
 # ---------- Content sample ---------- #
 
 st.subheader("Quick content sample (click row to copy text)")
-kw = st.text_input("Filter posts containing… (leave blank for all)")
+kw = st.text_input("Filter posts containing…")
 filtered = df if kw == "" else df[df["Post Content"].str.contains(kw, case=False, na=False)]
 
-st.dataframe(
-    filtered[["Platform", "Post_dt", "Bucket", "Post Content"]].head(250),
-    height=300,
-)
+st.dataframe(filtered[["Platform", "Post_dt", "Bucket", "Post Content"]].head(250), height=300)
 
-st.caption("© 2025 Shadee.Care • Prototype dashboard v2 – keyword buckets")
+st.caption("© 2025 Shadee.Care • Dashboard v3 – regex buckets")
