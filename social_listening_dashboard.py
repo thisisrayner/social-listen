@@ -1,10 +1,12 @@
-# Shadee.Care – Social Listening Dashboard (v5 – diagnostics)
+# Shadee.Care – Social Listening Dashboard (v6 – new bucket & regex tweak)
 # ------------------------------------------------------------------
 # Streamlit app that visualises post activity scraped from Reddit &
 # YouTube (Excel export with one sheet per search‑phrase).
-# v5 adds a **diagnostic expander** to inspect the top words inside the
-# catch‑all "other" bucket so analysts can decide which new regex
-# buckets are worth adding.
+# v6 changes:
+#   • Widen **self_blame** regex to catch "everyone hates me", "hate people",
+#     and "don't deserve to live" phrasing.
+#   • Add new **friendship_drama** bucket to capture peer‑relationship issues.
+#   • Colour legend updated; diagnostics expander retained.
 # ------------------------------------------------------------------
 # HOW TO RUN LOCALLY
 #   1. pip install streamlit pandas matplotlib openpyxl
@@ -21,11 +23,19 @@ import streamlit as st
 
 # ---------- Keyword bucket regexes ---------- #
 BUCKET_PATTERNS: Dict[str, str] = {
-    "self_blame": r"\b(hate(?:d|s)? myself|loathe myself|everyone hate(?:s|d)? me|worthless|i'?m a failure|no one cares|what'?s wrong with me|deserve(?:s)? to suffer)\b",
+    # Expanded: covers "everyone hates me", "hate people", "don't deserve to live"
+    "self_blame": r"\b(hate(?:s|d)? (?:myself|me|everybody|people)|everyone hate(?:s|d)? (?:me|people)|worthless|i (?:don'?t|do not) deserve to live|i'?m a failure|no one cares|what'?s wrong with me|deserve(?:s)? to suffer)\b",
+
     "cost_concern": r"\b(can'?t afford|too expensive|cost of therapy|insurance won'?t|money for help|cheap therapy|on a budget)\b",
+
     "work_burnout": r"\b(burnt out|burned out|exhausted by work|quit(?:ting)? my job|toxic work(?:place)?|overworked|deadlines|study burnout)\b",
+
     "self_harm": r"\b(kill myself|end my life|suicid(?:e|al)|self[- ]?harm|jump off|take my life|die by suicide)\b",
+
     "relationship_breakup": r"\b(break[- ]?up|dump(?:ed|ing)?|heart ?broken|ex[- ]?(?:bf|gf)|my ex\b|lost my (partner|girlfriend|boyfriend))\b",
+
+    # NEW bucket for peer / friendship issues
+    "friendship_drama": r"\b(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed|ing)?|betray(?:ed)?|leave|leaving|lost)|lost my friends?|no friends?|cut off friends?|my (?:best )?friend(?:s)? (?:hate|left|stopped talking))\b",
 }
 
 BUCKET_COLOURS = {
@@ -34,6 +44,7 @@ BUCKET_COLOURS = {
     "work_burnout": "🟩",
     "self_harm": "🟪",
     "relationship_breakup": "🟦",
+    "friendship_drama": "🟫",
     "other": "⬜️",
 }
 
@@ -75,7 +86,7 @@ def tag_bucket(text: str) -> str:
 # ---------- Streamlit UI ---------- #
 
 st.set_page_config(page_title="Shadee Social Listening", layout="wide")
-st.title("🩺 Shadee.Care – Social Listening Dashboard (v5)")
+st.title("🩺 Shadee.Care – Social Listening Dashboard (v6)")
 
 uploaded = st.sidebar.file_uploader("Upload the Excel scrape (one sheet per search phrase)", type=["xlsx"])
 if uploaded is None:
@@ -172,4 +183,4 @@ if "other" in df["Bucket"].unique():
         )
         st.dataframe(top, height=300)
 
-st.caption("© 2025 Shadee.Care • Dashboard v5 – regex buckets + diagnostics")
+st.caption("© 2025 Shadee.Care • Dashboard v6 – new bucket & refined regex")
