@@ -1,17 +1,8 @@
-# Shadee.Care – Social Listening Dashboard (v6 – new bucket & regex tweak)
+# Shadee.Care – Social Listening Dashboard (v7 – combine‑all option)
 # ------------------------------------------------------------------
-# Streamlit app that visualises post activity scraped from Reddit &
-# YouTube (Excel export with one sheet per search‑phrase).
-# v6 changes:
-#   • Widen **self_blame** regex to catch "everyone hates me", "hate people",
-#     and "don't deserve to live" phrasing.
-#   • Add new **friendship_drama** bucket to capture peer‑relationship issues.
-#   • Colour legend updated; diagnostics expander retained.
-# ------------------------------------------------------------------
-# HOW TO RUN LOCALLY
-#   1. pip install streamlit pandas matplotlib openpyxl
-#   2. streamlit run social_listening_dashboard.py
-#   3. Upload the Excel file when prompted.
+# New feature: sidebar now offers **“All (combined)”** so analysts can
+# visualise aggregated data across every sheet at once. The combined
+# dataframe adds a 'Sheet' column to keep source context.
 # ------------------------------------------------------------------
 
 import re
@@ -23,18 +14,11 @@ import streamlit as st
 
 # ---------- Keyword bucket regexes ---------- #
 BUCKET_PATTERNS: Dict[str, str] = {
-    # Expanded: covers "everyone hates me", "hate people", "don't deserve to live"
     "self_blame": r"\b(hate(?:s|d)? (?:myself|me|everybody|people)|everyone hate(?:s|d)? (?:me|people)|worthless|i (?:don'?t|do not) deserve to live|i'?m a failure|no one cares|what'?s wrong with me|deserve(?:s)? to suffer)\b",
-
     "cost_concern": r"\b(can'?t afford|too expensive|cost of therapy|insurance won'?t|money for help|cheap therapy|on a budget)\b",
-
     "work_burnout": r"\b(burnt out|burned out|exhausted by work|quit(?:ting)? my job|toxic work(?:place)?|overworked|deadlines|study burnout)\b",
-
     "self_harm": r"\b(kill myself|end my life|suicid(?:e|al)|self[- ]?harm|jump off|take my life|die by suicide)\b",
-
     "relationship_breakup": r"\b(break[- ]?up|dump(?:ed|ing)?|heart ?broken|ex[- ]?(?:bf|gf)|my ex\b|lost my (partner|girlfriend|boyfriend))\b",
-
-    # NEW bucket for peer / friendship issues
     "friendship_drama": r"\b(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed|ing)?|betray(?:ed)?|leave|leaving|lost)|lost my friends?|no friends?|cut off friends?|my (?:best )?friend(?:s)? (?:hate|left|stopped talking))\b",
 }
 
@@ -86,16 +70,29 @@ def tag_bucket(text: str) -> str:
 # ---------- Streamlit UI ---------- #
 
 st.set_page_config(page_title="Shadee Social Listening", layout="wide")
-st.title("🩺 Shadee.Care – Social Listening Dashboard (v6)")
+st.title("🩺 Shadee.Care – Social Listening Dashboard (v7)")
 
 uploaded = st.sidebar.file_uploader("Upload the Excel scrape (one sheet per search phrase)", type=["xlsx"])
 if uploaded is None:
     st.info("⬅️ Upload an Excel file to begin.")
     st.stop()
 
+# --- Load sheets and build combined DF ---
+
 xls = pd.ExcelFile(uploaded)
-raw_dfs = {n: pd.read_excel(uploaded, sheet_name=n, header=2) for n in xls.sheet_names}
-phrase = st.sidebar.selectbox("Choose a sheet / search phrase", list(raw_dfs))
+raw_dfs: Dict[str, pd.DataFrame] = {}
+for sheet in xls.sheet_names:
+    df_temp = pd.read_excel(uploaded, sheet_name=sheet, header=2)
+    df_temp["Sheet"] = sheet  # retain provenance
+    raw_dfs[sheet] = df_temp
+
+combined_df = pd.concat(raw_dfs.values(), ignore_index=True)
+raw_dfs["All (combined)"] = combined_df
+
+# --- Sidebar selector ---
+options = ["All (combined)"] + xls.sheet_names
+phrase = st.sidebar.selectbox("Choose a sheet / search phrase", options, index=0)
+
 df = raw_dfs[phrase].copy()
 
 # ---------- Clean + bucket ---------- #
@@ -164,7 +161,11 @@ if df["Platform"].str.contains("Youtube", case=False).any():
 st.subheader("Quick content sample (click row to copy text)")
 kw = st.text_input("Filter posts containing…")
 filtered = df if kw == "" else df[df["Post Content"].str.contains(kw, case=False, na=False)]
-st.dataframe(filtered[["Platform", "Post_dt", "Bucket", "Post Content"]].head(250), height=300)
+show_cols = ["Platform", "Post_dt", "Bucket", "Post Content"]
+if "Sheet" in df.columns:
+    show_cols.insert(0, "Sheet")
+
+st.dataframe(filtered[show_cols].head(250), height=300)
 
 # ---------- Diagnostic: what's in 'other'? ---------- #
 
@@ -183,4 +184,4 @@ if "other" in df["Bucket"].unique():
         )
         st.dataframe(top, height=300)
 
-st.caption("© 2025 Shadee.Care • Dashboard v6 – new bucket & refined regex")
+st.caption("© 2025 Shadee.Care • Dashboard v7 – combined‑all option")
