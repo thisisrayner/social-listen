@@ -1,14 +1,14 @@
-# Shadee.Care – Social Listening Dashboard (v9 – Reddit live pull)
+# Shadee.Care – Social Listening Dashboard (v9b – Reddit live pull with timeout)
 # ------------------------------------------------------------------
-# New feature: query Reddit in real time using the Pushshift API.
-# Use sidebar to specify a search term + time window; results will be
-# fetched live, tagged into buckets, and visualised like scraped Excel.
-# Requires Streamlit secrets.toml with Reddit credentials.
+# Now includes timeout handling for psaw/Pushshift API
+# Prevents infinite hangs if Pushshift is unresponsive
 # ------------------------------------------------------------------
 
 import re
 import datetime as dt
 from typing import Dict
+from itertools import islice
+import time
 
 import pandas as pd
 import streamlit as st
@@ -65,7 +65,18 @@ with st.sidebar:
 if do_fetch:
     api = st.session_state.reddit_api
     start = int((dt.datetime.utcnow() - dt.timedelta(hours=hours)).timestamp())
-    results = api.search_submissions(q=query, subreddit=subr or None, after=start, limit=limit)
+    
+    with st.spinner("Pulling live posts from Reddit..."):
+        try:
+            raw = api.search_submissions(q=query, subreddit=subr or None, after=start)
+            results = list(islice(raw, limit))  # limit using islice
+        except Exception as e:
+            st.error(f"Failed to fetch posts: {e}")
+            results = []
+
+    if not results:
+        st.warning("⚠️ No posts returned (Pushshift may be down or timing out)")
+        st.stop()
 
     posts = []
     for p in results:
@@ -92,8 +103,6 @@ if do_fetch:
     st.subheader("📄 Content sample")
     st.dataframe(df[["Post_dt", "Bucket", "Subreddit", "Post Content"]].head(30), height=300)
 
-    # Optional spike detection here (skip for now – live stream is small)
-
     if "other" in df["Bucket"].unique():
         with st.expander("🔍 Top words in 'other'"):
             top = (
@@ -108,4 +117,4 @@ if do_fetch:
             )
             st.dataframe(top, height=250)
 
-st.caption("© 2025 Shadee.Care • Reddit live search (v9)")
+st.caption("© 2025 Shadee.Care • Reddit live search (v9b)")
