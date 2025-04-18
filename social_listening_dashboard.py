@@ -1,19 +1,15 @@
-# Shadee.Care – Social Listening Dashboard (v9b – Reddit live pull with timeout)
+# Shadee.Care – Social Listening Dashboard (v9c – Live Reddit via praw only)
 # ------------------------------------------------------------------
-# Now includes timeout handling for psaw/Pushshift API
-# Prevents infinite hangs if Pushshift is unresponsive
+# Replaces psaw with direct praw API for stability (Pushshift deprecated)
+# Pulls newest posts from subreddit(s), filters by query manually
 # ------------------------------------------------------------------
 
 import re
 import datetime as dt
 from typing import Dict
-from itertools import islice
-import time
 
 import pandas as pd
 import streamlit as st
-
-from psaw import PushshiftAPI
 import praw
 
 # ---------- Reddit API init ---------- #
@@ -24,7 +20,7 @@ if "reddit_api" not in st.session_state:
         client_secret=creds["client_secret"],
         user_agent=creds["user_agent"]
     )
-    st.session_state.reddit_api = PushshiftAPI(reddit)
+    st.session_state.reddit_api = reddit
 
 # ---------- Regex bucket patterns ---------- #
 BUCKET_PATTERNS: Dict[str, str] = {
@@ -56,44 +52,43 @@ st.title("🔴 Shadee.Care – Reddit Live Listening Dashboard")
 
 with st.sidebar:
     st.header("Live Reddit Pull")
-    query = st.text_input("Search phrase", "lonely OR therapy")
-    subr = st.text_input("Subreddit (optional)", "depression")
-    hours = st.slider("Lookback hours", 1, 72, 6)
-    limit = st.slider("Max posts", 10, 200, 50)
+    query = st.text_input("Search phrase (keywords, OR-supported)", "lonely OR therapy")
+    subr = st.text_input("Subreddit (e.g. depression or all)", "depression")
+    limit = st.slider("Max posts to fetch", 10, 200, 50)
     do_fetch = st.button("🔍 Fetch live posts")
 
 if do_fetch:
-    api = st.session_state.reddit_api
-    start = int((dt.datetime.utcnow() - dt.timedelta(hours=hours)).timestamp())
-    
-    with st.spinner("Pulling live posts from Reddit..."):
-        try:
-            raw = api.search_submissions(q=query, subreddit=subr or None, after=start)
-            results = list(islice(raw, limit))  # limit using islice
-        except Exception as e:
-            st.error(f"Failed to fetch posts: {e}")
-            results = []
-
-    if not results:
-        st.warning("⚠️ No posts returned (Pushshift may be down or timing out)")
-        st.stop()
+    reddit = st.session_state.reddit_api
+    subreddits = subr.split("+") if "+" in subr else [subr.strip()]
+    terms = [t.strip().lower() for t in re.split(r"\bOR\b", query, flags=re.I)]
 
     posts = []
-    for p in results:
-        posts.append({
-            "Platform": "Reddit",
-            "Post_dt": dt.datetime.utcfromtimestamp(p.created_utc),
-            "Post Content": (p.title or "") + "\n" + (p.selftext or ""),
-            "Subreddit": p.subreddit.display_name,
-            "Post URL": f"https://www.reddit.com{p.permalink}",
-        })
+    with st.spinner("Pulling posts via Reddit API..."):
+        try:
+            for sr in subreddits:
+                for post in reddit.subreddit(sr).new(limit=limit):
+                    content = f"{post.title}\n{post.selftext}".lower()
+                    if any(term in content for term in terms):
+                        posts.append({
+                            "Platform": "Reddit",
+                            "Post_dt": dt.datetime.utcfromtimestamp(post.created_utc),
+                            "Post Content": post.title + "\n" + post.selftext,
+                            "Subreddit": post.subreddit.display_name,
+                            "Post URL": f"https://www.reddit.com{post.permalink}",
+                        })
+        except Exception as e:
+            st.error(f"❌ Failed to fetch posts from Reddit: {e}")
+            st.stop()
+
+    if not posts:
+        st.warning("⚠️ No matching posts found.")
+        st.stop()
 
     df = pd.DataFrame(posts)
     df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
 
-    st.success(f"Fetched {len(df)} posts")
+    st.success(f"✅ Pulled {len(df)} matching posts from r/{subr}")
 
-    # ----- Visualise ----- #
     st.subheader("📊 Post volume by bucket")
     st.bar_chart(df["Bucket"].value_counts().sort_values(ascending=False))
 
@@ -117,4 +112,4 @@ if do_fetch:
             )
             st.dataframe(top, height=250)
 
-st.caption("© 2025 Shadee.Care • Reddit live search (v9b)")
+st.caption("© 2025 Shadee.Care • Reddit live search (v9c – powered by praw)")
