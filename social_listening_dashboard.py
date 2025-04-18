@@ -1,10 +1,10 @@
-# Shadee.Care – Social Listening Dashboard (v3 – regex buckets)
+# Shadee.Care – Social Listening Dashboard (v4 – extra buckets)
 # ------------------------------------------------------------------
 # Streamlit app that visualises post activity scraped from Reddit &
 # YouTube (Excel export with one sheet per search‑phrase).
-# v3 upgrade: keyword buckets now use **regex** patterns so that close
-# variations (e.g. "hated myself", "can't afford", "burned‑out") are
-# captured without writing dozens of near‑duplicate phrases.
+# v4 upgrade adds two new regex buckets:
+#   • **self_harm** (critical)
+#   • **relationship_breakup** (break‑up heartache)
 # ------------------------------------------------------------------
 # HOW TO RUN LOCALLY
 #   1. pip install streamlit pandas matplotlib openpyxl
@@ -20,28 +20,34 @@ import pandas as pd
 import streamlit as st
 
 # ---------- Keyword bucket regexes ---------- #
-# Each bucket is a single **raw string regex** (ignore‑case).  Regex
-# lets us match plurals, tense changes, or words near each other.
 BUCKET_PATTERNS: Dict[str, str] = {
+    # negative self‑talk / self‑worth
     "self_blame": r"\b(hate(?:d|s)? myself|everyone hate(?:s|d)? me|worthless|i'?m a failure|no one cares|what'?s wrong with me|deserve(?:s)? to suffer)\b",
+    # money barrier to help‑seeking
     "cost_concern": r"\b(can'?t afford|too expensive|cost of therapy|insurance won'?t|money for help|cheap therapy|on a budget)\b",
+    # job / study burnout
     "work_burnout": r"\b(burnt out|burned out|exhausted by work|quit(?:ting)? my job|toxic work(?:place)?|overworked|deadlines|study burnout)\b",
+    # NEW: explicit self‑harm / suicide language
+    "self_harm": r"\b(kill myself|end my life|suicid(?:e|al)|self[- ]?harm|jump off|take my life|die by suicide)\b",
+    # NEW: relationship break‑up distress
+    "relationship_breakup": r"\b(break[- ]?up|dump(?:ed|ing)?|heart ?broken|ex[- ]?(?:bf|gf)|my ex\b|lost my (partner|girlfriend|boyfriend))\b",
 }
 
 BUCKET_COLOURS = {
     "self_blame": "🟥",
     "cost_concern": "🟨",
     "work_burnout": "🟩",
+    "self_harm": "🟪",
+    "relationship_breakup": "🟦",
     "other": "⬜️",
 }
 
-# Pre‑compile for speed
+# Pre‑compile patterns
 COMPILED = {k: re.compile(pat, re.I) for k, pat in BUCKET_PATTERNS.items()}
 
 # ---------- Helper functions ---------- #
 
 def parse_post_date(date_str: str):
-    """Convert 'Posted 05:59 15 Apr 2025' → datetime or None."""
     if not isinstance(date_str, str):
         return None
     m = re.search(r"Posted (\d{2}):(\d{2}) (\d{1,2}) (\w{3}) (\d{4})", date_str)
@@ -80,7 +86,7 @@ def tag_bucket(text: str) -> str:
 # ---------- Streamlit UI ---------- #
 
 st.set_page_config(page_title="Shadee Social Listening", layout="wide")
-st.title("🩺 Shadee.Care – Social Listening Dashboard (regex edition)")
+st.title("🩺 Shadee.Care – Social Listening Dashboard (v4)")
 
 uploaded = st.sidebar.file_uploader("Upload the Excel scrape (one sheet per search phrase)", type=["xlsx"])
 
@@ -88,7 +94,6 @@ if uploaded is None:
     st.info("⬅️ Upload an Excel file to begin.")
     st.stop()
 
-# Load all sheets
 xls = pd.ExcelFile(uploaded)
 raw_dfs = {name: pd.read_excel(uploaded, sheet_name=name, header=2) for name in xls.sheet_names}
 
@@ -103,7 +108,7 @@ df["Subreddit"] = df.apply(lambda r: extract_subreddit(r.get("Post URL")), axis=
 if "Post Content" not in df:
     df["Post Content"] = ""
 
-# Tag buckets via regex
+# Tag buckets
 df["Bucket"] = df["Post Content"].fillna("").apply(tag_bucket)
 
 # Bucket filter
@@ -119,20 +124,24 @@ if selected:
 col1, col2, col3 = st.columns(3)
 col1.metric("Posts", len(df))
 col2.metric("% Reddit", f"{(df['Platform']=='Reddit').mean()*100:.1f}%")
-col3.metric("Timespan", f"{(df['Post_dt'].max() - df['Post_dt'].min()).days} d" if df["Post_dt"].notna().any() else "n/a")
+col3.metric(
+    "Timespan",
+    f"{(df['Post_dt'].max() - df['Post_dt'].min()).days} d" if df["Post_dt"].notna().any() else "n/a",
+)
 
-st.markdown("**Bucket legend:** " + "  ".join(f"{BUCKET_COLOURS.get(b, '⬜️')} {b}" for b in BUCKET_PATTERNS))
+st.markdown(
+    "**Bucket legend:** " + "  ".join(f"{BUCKET_COLOURS.get(b, '⬜️')} {b}" for b in BUCKET_PATTERNS)
+)
 
-# ---------- Time‑series by bucket ---------- #
+# ---------- Time‑series ---------- #
 
 if df["Post_dt"].notna().any():
     pivot = (
         df.set_index("Post_dt").groupby("Bucket").resample("D").size().unstack(fill_value=0).T
     )
-    st.subheader("Daily post volume by bucket (regex matched)")
+    st.subheader("Daily post volume by bucket")
     st.line_chart(pivot)
 
-    # Spike detection
     alerts = [
         {"date": d.date(), "bucket": b, "count": int(c)}
         for b in pivot.columns
@@ -170,4 +179,4 @@ filtered = df if kw == "" else df[df["Post Content"].str.contains(kw, case=False
 
 st.dataframe(filtered[["Platform", "Post_dt", "Bucket", "Post Content"]].head(250), height=300)
 
-st.caption("© 2025 Shadee.Care • Dashboard v3 – regex buckets")
+st.caption("© 2025 Shadee.Care • Dashboard v4 – regex buckets + new categories")
