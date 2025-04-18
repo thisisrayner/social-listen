@@ -2,3 +2,5 @@ streamlit>=1.33
 pandas
 matplotlib
 openpyxl
+praw
+psaw
