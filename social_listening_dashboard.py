@@ -1,7 +1,6 @@
-# Shadee.Care – Social Listening Dashboard (v9c – Live Reddit via praw only)
+# Shadee.Care – Social Listening Dashboard (v9d – Reddit via praw + Excel upload)
 # ------------------------------------------------------------------
-# Replaces psaw with direct praw API for stability (Pushshift deprecated)
-# Pulls newest posts from subreddit(s), filters by query manually
+# Stable Reddit pull (praw), Excel support restored, no psaw
 # ------------------------------------------------------------------
 
 import re
@@ -11,6 +10,7 @@ from typing import Dict
 import pandas as pd
 import streamlit as st
 import praw
+from pathlib import Path
 
 # ---------- Reddit API init ---------- #
 if "reddit_api" not in st.session_state:
@@ -48,52 +48,70 @@ def tag_bucket(text: str) -> str:
 
 # ---------- Streamlit UI ---------- #
 st.set_page_config(page_title="Shadee Live Listening", layout="wide")
-st.title("🔴 Shadee.Care – Reddit Live Listening Dashboard")
+st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
 
-with st.sidebar:
-    st.header("Live Reddit Pull")
-    query = st.text_input("Search phrase (keywords, OR-supported)", "lonely OR therapy")
-    subr = st.text_input("Subreddit (e.g. depression or all)", "depression")
-    limit = st.slider("Max posts to fetch", 10, 200, 50)
-    do_fetch = st.button("🔍 Fetch live posts")
+st.sidebar.header("Choose Data Source")
+source_mode = st.sidebar.radio("Select mode", ["🔴 Live Reddit Pull", "📁 Upload Excel"], horizontal=False)
 
-if do_fetch:
-    reddit = st.session_state.reddit_api
-    subreddits = subr.split("+") if "+" in subr else [subr.strip()]
-    terms = [t.strip().lower() for t in re.split(r"\bOR\b", query, flags=re.I)]
+if source_mode == "🔴 Live Reddit Pull":
+    query = st.sidebar.text_input("Search phrase (keywords, OR-supported)", "lonely OR therapy")
+    subr = st.sidebar.text_input("Subreddit (e.g. depression or all)", "depression")
+    limit = st.sidebar.slider("Max posts to fetch", 10, 200, 50)
+    do_fetch = st.sidebar.button("🔍 Fetch live posts")
 
-    posts = []
-    with st.spinner("Pulling posts via Reddit API..."):
-        try:
-            for sr in subreddits:
-                for post in reddit.subreddit(sr).new(limit=limit):
-                    content = f"{post.title}\n{post.selftext}".lower()
-                    if any(term in content for term in terms):
-                        posts.append({
-                            "Platform": "Reddit",
-                            "Post_dt": dt.datetime.utcfromtimestamp(post.created_utc),
-                            "Post Content": post.title + "\n" + post.selftext,
-                            "Subreddit": post.subreddit.display_name,
-                            "Post URL": f"https://www.reddit.com{post.permalink}",
-                        })
-        except Exception as e:
-            st.error(f"❌ Failed to fetch posts from Reddit: {e}")
+    if do_fetch:
+        reddit = st.session_state.reddit_api
+        subreddits = subr.split("+") if "+" in subr else [subr.strip()]
+        terms = [t.strip().lower() for t in re.split(r"\bOR\b", query, flags=re.I)]
+
+        posts = []
+        with st.spinner("Pulling posts via Reddit API..."):
+            try:
+                for sr in subreddits:
+                    for post in reddit.subreddit(sr).new(limit=limit):
+                        content = f"{post.title}\n{post.selftext}".lower()
+                        if any(term in content for term in terms):
+                            posts.append({
+                                "Platform": "Reddit",
+                                "Post_dt": dt.datetime.utcfromtimestamp(post.created_utc),
+                                "Post Content": post.title + "\n" + post.selftext,
+                                "Subreddit": post.subreddit.display_name,
+                                "Post URL": f"https://www.reddit.com{post.permalink}",
+                            })
+            except Exception as e:
+                st.error(f"❌ Failed to fetch posts from Reddit: {e}")
+                st.stop()
+
+        if not posts:
+            st.warning("⚠️ No matching posts found.")
             st.stop()
 
-    if not posts:
-        st.warning("⚠️ No matching posts found.")
+        df = pd.DataFrame(posts)
+        df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
+
+elif source_mode == "📁 Upload Excel":
+    st.sidebar.write("Upload the Excel export (one sheet per search phrase)")
+    uploaded_file = st.sidebar.file_uploader("Drag and drop file here", type="xlsx")
+
+    if uploaded_file:
+        sheetnames = pd.ExcelFile(uploaded_file).sheet_names
+        selected = st.sidebar.selectbox("Choose a sheet / search phrase", sheetnames)
+        df = pd.read_excel(uploaded_file, sheet_name=selected)
+        if "Bucket" not in df.columns:
+            df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
+    else:
         st.stop()
 
-    df = pd.DataFrame(posts)
-    df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
-
-    st.success(f"✅ Pulled {len(df)} matching posts from r/{subr}")
+# ---------- Shared visual section ---------- #
+if 'df' in locals():
+    st.success(f"✅ Loaded {len(df)} posts for analysis")
 
     st.subheader("📊 Post volume by bucket")
     st.bar_chart(df["Bucket"].value_counts().sort_values(ascending=False))
 
-    st.subheader("🧠 Top subreddits")
-    st.bar_chart(df["Subreddit"].value_counts().head(10))
+    if "Subreddit" in df.columns:
+        st.subheader("🧠 Top subreddits")
+        st.bar_chart(df["Subreddit"].value_counts().head(10))
 
     st.subheader("📄 Content sample")
     st.dataframe(df[["Post_dt", "Bucket", "Subreddit", "Post Content"]].head(30), height=300)
@@ -112,4 +130,4 @@ if do_fetch:
             )
             st.dataframe(top, height=250)
 
-st.caption("© 2025 Shadee.Care • Reddit live search (v9c – powered by praw)")
+st.caption("© 2025 Shadee.Care • Live Reddit & Excel dashboard (v9d)")
