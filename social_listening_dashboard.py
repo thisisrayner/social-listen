@@ -1,13 +1,12 @@
-# Shadee.Care – Social Listening Dashboard (v7 – combine‑all option)
+# Shadee.Care – Social Listening Dashboard (v8 – date‑range selector)
 # ------------------------------------------------------------------
-# New feature: sidebar now offers **“All (combined)”** so analysts can
-# visualise aggregated data across every sheet at once. The combined
-# dataframe adds a 'Sheet' column to keep source context.
+# New feature: a sidebar **date‑range picker** lets analysts limit the
+# visualisation to posts between chosen start & end dates (inclusive).
 # ------------------------------------------------------------------
 
 import re
 import datetime as dt
-from typing import Dict
+from typing import Dict, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -23,15 +22,9 @@ BUCKET_PATTERNS: Dict[str, str] = {
 }
 
 BUCKET_COLOURS = {
-    "self_blame": "🟥",
-    "cost_concern": "🟨",
-    "work_burnout": "🟩",
-    "self_harm": "🟪",
-    "relationship_breakup": "🟦",
-    "friendship_drama": "🟫",
-    "other": "⬜️",
+    "self_blame": "🟥", "cost_concern": "🟨", "work_burnout": "🟩", "self_harm": "🟪",
+    "relationship_breakup": "🟦", "friendship_drama": "🟫", "other": "⬜️",
 }
-
 COMPILED = {b: re.compile(p, re.I) for b, p in BUCKET_PATTERNS.items()}
 
 # ---------- Helper functions ---------- #
@@ -55,9 +48,9 @@ def extract_subreddit(url: str):
     return m.group(1) if m else None
 
 def detect_spikes(series: pd.Series, window: int = 7, sigma: float = 2.5):
-    m = series.rolling(window).mean()
-    s = series.rolling(window).std().fillna(0)
-    return series[series > m + sigma * s]
+    roll_mean = series.rolling(window).mean()
+    roll_std = series.rolling(window).std().fillna(0)
+    return series[series > roll_mean + sigma * roll_std]
 
 @st.cache_data(show_spinner=False)
 def tag_bucket(text: str) -> str:
@@ -70,26 +63,24 @@ def tag_bucket(text: str) -> str:
 # ---------- Streamlit UI ---------- #
 
 st.set_page_config(page_title="Shadee Social Listening", layout="wide")
-st.title("🩺 Shadee.Care – Social Listening Dashboard (v7)")
+st.title("🩺 Shadee.Care – Social Listening Dashboard (v8)")
 
 uploaded = st.sidebar.file_uploader("Upload the Excel scrape (one sheet per search phrase)", type=["xlsx"])
 if uploaded is None:
     st.info("⬅️ Upload an Excel file to begin.")
     st.stop()
 
-# --- Load sheets and build combined DF ---
+# --- Load sheets & build combined DF ---
 
 xls = pd.ExcelFile(uploaded)
 raw_dfs: Dict[str, pd.DataFrame] = {}
 for sheet in xls.sheet_names:
-    df_temp = pd.read_excel(uploaded, sheet_name=sheet, header=2)
-    df_temp["Sheet"] = sheet  # retain provenance
-    raw_dfs[sheet] = df_temp
-
+    df_tmp = pd.read_excel(uploaded, sheet_name=sheet, header=2)
+    df_tmp["Sheet"] = sheet
+    raw_dfs[sheet] = df_tmp
 combined_df = pd.concat(raw_dfs.values(), ignore_index=True)
 raw_dfs["All (combined)"] = combined_df
 
-# --- Sidebar selector ---
 options = ["All (combined)"] + xls.sheet_names
 phrase = st.sidebar.selectbox("Choose a sheet / search phrase", options, index=0)
 
@@ -98,35 +89,47 @@ df = raw_dfs[phrase].copy()
 # ---------- Clean + bucket ---------- #
 
 df["Post_dt"] = df.get("Post Date", pd.Series(dtype=str)).apply(parse_post_date)
-df["Subreddit"] = df.apply(lambda r: extract_subreddit(r.get("Post URL")), axis=1)
 if "Post Content" not in df:
     df["Post Content"] = ""
-
+df["Subreddit"] = df.apply(lambda r: extract_subreddit(r.get("Post URL")), axis=1)
 df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
 
-selected = st.sidebar.multiselect(
-    "Filter keyword buckets",
-    options=list(BUCKET_PATTERNS) + ["other"],
-    default=list(BUCKET_PATTERNS),
+# ---------- Date‑range selector ---------- #
+if df["Post_dt"].notna().any():
+    min_d = df["Post_dt"].min().date()
+    max_d = df["Post_dt"].max().date()
+    start_d, end_d = st.sidebar.date_input("Date range", value=(min_d, max_d), min_value=min_d, max_value=max_d)
+    if isinstance(start_d, dt.date):
+        # ensure end_d is not None for single‑date pick
+        if not isinstance(end_d, dt.date):
+            end_d = start_d
+        mask = (df["Post_dt"] >= pd.Timestamp(start_d)) & (df["Post_dt"] <= pd.Timestamp(end_d) + pd.Timedelta(days=1))
+        df = df[mask]
+else:
+    st.sidebar.warning("No date info in this sheet")
+
+# ---------- Bucket filter ---------- #
+selected_buckets = st.sidebar.multiselect(
+    "Filter keyword buckets", options=list(BUCKET_PATTERNS) + ["other"], default=list(BUCKET_PATTERNS)
 )
-if selected:
-    df = df[df["Bucket"].isin(selected)]
+if selected_buckets:
+    df = df[df["Bucket"].isin(selected_buckets)]
 
 # ---------- Metrics ---------- #
 col1, col2, col3 = st.columns(3)
 col1.metric("Posts", len(df))
 col2.metric("% Reddit", f"{(df['Platform']=='Reddit').mean()*100:.1f}%")
-col3.metric("Timespan", f"{(df['Post_dt'].max() - df['Post_dt'].min()).days} d" if df["Post_dt"].notna().any() else "n/a")
+col3.metric("Timespan", (
+    f"{(df['Post_dt'].max() - df['Post_dt'].min()).days} d" if df["Post_dt"].notna().any() else "n/a"
+))
 
 st.markdown("**Bucket legend:** " + "  ".join(f"{BUCKET_COLOURS.get(b, '⬜️')} {b}" for b in BUCKET_PATTERNS))
 
 # ---------- Time‑series ---------- #
-
 if df["Post_dt"].notna().any():
     pivot = df.set_index("Post_dt").groupby("Bucket").resample("D").size().unstack(fill_value=0).T
     st.subheader("Daily post volume by bucket")
     st.line_chart(pivot)
-
     alerts = [
         {"date": d.date(), "bucket": b, "count": int(c)}
         for b in pivot.columns
@@ -136,10 +139,9 @@ if df["Post_dt"].notna().any():
         st.subheader("⚠️ Spike alerts")
         st.dataframe(pd.DataFrame(alerts))
 else:
-    st.warning("No date information.")
+    st.warning("No date information after filters.")
 
 # ---------- Top communities ---------- #
-
 st.subheader("Top communities")
 if (df["Platform"] == "Reddit").any():
     st.write("### Reddit")
@@ -168,7 +170,6 @@ if "Sheet" in df.columns:
 st.dataframe(filtered[show_cols].head(250), height=300)
 
 # ---------- Diagnostic: what's in 'other'? ---------- #
-
 if "other" in df["Bucket"].unique():
     with st.expander("🔍 Explore 'other' bucket (top 50 words)"):
         top = (
@@ -184,4 +185,4 @@ if "other" in df["Bucket"].unique():
         )
         st.dataframe(top, height=300)
 
-st.caption("© 2025 Shadee.Care • Dashboard v7 – combined‑all option")
+st.caption("© 2025 Shadee.Care • Dashboard v8 – date‑range selector")
