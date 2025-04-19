@@ -54,14 +54,30 @@ if "reddit_api" not in st.session_state:
 #  Bucket regexes
 # ──────────────────────────────────────────────────────────────
 BUCKET_PATTERNS: Dict[str, str] = {
-    "self_blame": r"\b(hate(?:s|d)? (?:myself|me|everybody|people)|everyone hate(?:s|d)? (?:me|people)|worthless|i (?:don'?t|do not) deserve to live|i'?m a failure|no one cares|what'?s wrong with me|deserve(?:s)? to suffer)\b",
-    "cost_concern": r"\b(can'?t afford|too expensive|cost of therapy|insurance won'?t|money for help|cheap therapy|on a budget)\b",
-    "work_burnout": r"\b(burnt out|burned out|exhausted by work|quit(?:ting)? my job|toxic work(?:place)?|overworked|deadlines|study burnout)\b",
-    "self_harm": r"\b(kill myself|end my life|suicid(?:e|al)|self[- ]?harm|jump off|take my life|die by suicide)\b",
-    "relationship_breakup": r"\b(break[- ]?up|dump(?:ed|ing)?|heart ?broken|ex[- ]?(?:bf|gf)|my ex\b|lost my (partner|girlfriend|boyfriend))\b",
-    "friendship_drama": r"\b(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed|ing)?|betray(?:ed)?|leave|leaving|lost)|lost my friends?|no friends?|cut off friends?|my (?:best )?friend(?:s)? (?:hate|left|stopped talking))\b",
+    # strong self‑loathing or worthlessness
+    "self_blame": r"(hate(?:s|d)? (?:myself|me|everybody|people)|everyone hate(?:s|d)? (?:me|people)|worthless|i (?:don'?t|do not) deserve to live|i'?m a failure|no one cares|what'?s wrong with me|deserve(?:s)? to suffer)",
+
+    # cost / access worries
+    "cost_concern": r"(can'?t afford|too expensive|cost of therapy|insurance won'?t|money for help|cheap therapy|on a budget)",
+
+    # work & study burnout
+    "work_burnout": r"(burnt out|burned out|exhausted by work|quit(?:ting)? my job|toxic work(?:place)?|overworked|deadlines|study burnout)",
+
+    # self‑harm & suicide ideation
+    "self_harm": r"(kill myself|end my life|suicid(?:e|al)|self[- ]?harm|jump off|take my life|die by suicide)",
+
+    # romantic breakup / heartbreak
+    "relationship_breakup": r"(break[- ]?up|dump(?:ed|ing)?|heart ?broken|ex[- ]?(?:bf|gf)|my ex|lost my (partner|girlfriend|boyfriend))",
+
+    # friendship conflict / rejection
+    "friendship_drama": r"(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed|ing)?|betray(?:ed)?|leave|leaving|lost)|lost my friends?|no friends?|cut off friends?|my (?:best )?friend(?:s)? (?:hate|left|stopped talking))",
+
+    # acute crying / emotional overwhelm (YouTube shorts & vents)
+    "crying_distress": r"(can'?t stop crying|keep (?:on )?crying|cry(?:ing)? every (?:night|day)|cry myself to sleep|sob(?:bing)? uncontrollably)",
 }
-COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
+
+# compile once
+COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()} = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
 
 def tag_bucket(txt: str) -> str:
     low = txt.lower()
