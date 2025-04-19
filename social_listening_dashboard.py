@@ -151,6 +151,19 @@ if df is not None:
     st.subheader("📊 Post volume by bucket")
     st.bar_chart(df["Bucket"].value_counts().sort_values(ascending=False))
 
+    st.subheader("📈 Post trend over time")
+    try:
+        trend = (
+            df.groupby(df["Post_dt"].dt.to_period("D"))
+            .size()
+            .rename("Posts")
+            .to_frame()
+        )
+        trend.index = trend.index.to_timestamp()
+        st.line_chart(trend)
+    except Exception as e:
+        st.warning(f"⚠️ Could not plot trend: {e}")
+
     if "Subreddit" in df.columns:
         st.subheader("🧠 Top subreddits")
         st.bar_chart(df["Subreddit"].value_counts().head(10))
