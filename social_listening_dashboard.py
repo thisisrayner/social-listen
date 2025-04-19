@@ -1,8 +1,8 @@
-# Shadee.Care – Social Listening Dashboard (v9g)
-# -------------------------------------------------------------
-# • Robust Excel date handling: parses strings like “Posted 07:16 13 Apr 2025”
-# • Ensures a proper `Post_dt` column always exists → charts now show all days
-# -------------------------------------------------------------
+# Shadee.Care – Social Listening Dashboard (v9h)
+# ------------------------------------------------------------------------
+# • Excel uploader now adds an **ALL** option – combines every sheet.
+# • YouTube rows inside the Excel file are handled the same way as Reddit.
+# ------------------------------------------------------------------------
 
 import re
 import datetime as dt
@@ -19,8 +19,8 @@ DATE_RE = re.compile(r"(\d{1,2}:\d{2})\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})")
 MON = {m: i for i, m in enumerate(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
 
 def parse_post_date(txt: str):
-    """Convert strings like 'Posted 05:44 13 Apr 2025' to a `datetime` object.
-    Returns `pd.NaT` if the string cannot be parsed."""
+    """Convert strings like 'Posted 05:44 13 Apr 2025' to a datetime.
+    Returns pd.NaT if the string cannot be parsed."""
     if not isinstance(txt, str):
         return pd.NaT
     m = DATE_RE.search(txt)
@@ -39,16 +39,16 @@ def parse_post_date(txt: str):
 st.set_page_config(page_title="Shadee Live Listening", layout="wide")
 
 if "reddit_api" not in st.session_state:
-    rcreds = st.secrets["reddit"]
+    rc = st.secrets["reddit"]
     st.session_state.reddit_api = praw.Reddit(
-        client_id=rcreds["client_id"],
-        client_secret=rcreds["client_secret"],
-        user_agent=rcreds["user_agent"],
+        client_id=rc["client_id"],
+        client_secret=rc["client_secret"],
+        user_agent=rc["user_agent"],
         check_for_async=False,
     )
-    st.write("🔍 Loaded client_id:", rcreds["client_id"])
-    st.write("🔍 Loaded user_agent:", rcreds["user_agent"])
-    st.warning("⚠️ Reddit identity check skipped – assumed anonymous access")
+    st.write("🔍 Loaded client_id:", rc["client_id"])
+    st.write("🔍 Loaded user_agent:", rc["user_agent"])
+    st.warning("⚠️ Using anonymous (script) scope – Reddit identity not fetched")
 
 # ──────────────────────────────────────────────────────────────
 #  Bucket regexes
@@ -61,7 +61,7 @@ BUCKET_PATTERNS: Dict[str, str] = {
     "relationship_breakup": r"\b(break[- ]?up|dump(?:ed|ing)?|heart ?broken|ex[- ]?(?:bf|gf)|my ex\b|lost my (partner|girlfriend|boyfriend))\b",
     "friendship_drama": r"\b(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed|ing)?|betray(?:ed)?|leave|leaving|lost)|lost my friends?|no friends?|cut off friends?|my (?:best )?friend(?:s)? (?:hate|left|stopped talking))\b",
 }
-COMPILED = {b: re.compile(p, re.I) for b, p in BUCKET_PATTERNS.items()}
+COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
 
 def tag_bucket(txt: str) -> str:
     low = txt.lower()
@@ -71,29 +71,29 @@ def tag_bucket(txt: str) -> str:
     return "other"
 
 # ──────────────────────────────────────────────────────────────
-#  UI – data source
+#  UI
 # ──────────────────────────────────────────────────────────────
 st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
-
-st.sidebar.header("Choose Data Source")
-source_mode = st.sidebar.radio("Select mode", ["🔴 Live Reddit Pull", "📁 Upload Excel"])
+side = st.sidebar
+side.header("Choose Data Source")
+mode = side.radio("Select mode", ["🔴 Live Reddit Pull", "📁 Upload Excel"])
 
 df = None
 
 # ──────────────────────────────────────────────────────────────
-#  Load data
+#  Fetch data
 # ──────────────────────────────────────────────────────────────
-if source_mode.startswith("🔴"):
-    query = st.sidebar.text_input("Search phrase", "lonely OR therapy")
-    subr = st.sidebar.text_input("Subreddit", "depression")
-    limit = st.sidebar.slider("Max posts", 10, 200, 50)
-    if st.sidebar.button("🔍 Fetch live posts"):
-        terms = [t.strip().lower() for t in re.split(r"\bOR\b", query, flags=re.I)]
-        subs = subr.split("+") if "+" in subr else [subr]
+if mode.startswith("🔴"):
+    q = side.text_input("Search phrase", "lonely OR therapy")
+    sub = side.text_input("Subreddit", "depression")
+    lim = side.slider("Max posts", 10, 200, 50)
+    if side.button("🔍 Fetch live posts"):
+        terms = [t.strip().lower() for t in re.split(r"\bOR\b", q, flags=re.I)]
+        subs = sub.split("+") if "+" in sub else [sub]
         rows = []
-        with st.spinner("Contacting Reddit…"):
+        with st.spinner("Contacting Reddit …"):
             for sr in subs:
-                for p in st.session_state.reddit_api.subreddit(sr).new(limit=limit):
+                for p in st.session_state.reddit_api.subreddit(sr).new(limit=lim):
                     body = f"{p.title}\n{p.selftext}".lower()
                     if any(t in body for t in terms):
                         rows.append({
@@ -105,55 +105,50 @@ if source_mode.startswith("🔴"):
                         })
         if rows:
             df = pd.DataFrame(rows)
-else:
-    up = st.sidebar.file_uploader("Drag & drop Excel", type="xlsx")
+else:  # Excel branch
+    up = side.file_uploader("Drag & drop Excel", type="xlsx")
     if up:
-        sheet = st.sidebar.selectbox("Sheet", pd.ExcelFile(up).sheet_names)
-        df = pd.read_excel(up, sheet_name=sheet, header=2)
+        xls = pd.ExcelFile(up)
+        sheet_choices = ["ALL"] + xls.sheet_names
+        chosen = side.selectbox("Sheet", sheet_choices)
+        if chosen == "ALL":
+            _d = pd.read_excel(up, sheet_name=None, header=2)
+            df = pd.concat(_d.values(), ignore_index=True)
+        else:
+            df = pd.read_excel(up, sheet_name=chosen, header=2)
 
-        # Ensure Post Content exists
+        # Harmonise columns
         if "Post Content" not in df.columns and len(df.columns) >= 5:
             df.rename(columns={df.columns[4]: "Post Content"}, inplace=True)
-
-        # Parse / create Post_dt
         if "Post_dt" not in df.columns:
             if "Post Date" in df.columns:
                 df["Post_dt"] = df["Post Date"].apply(parse_post_date)
             else:
                 df["Post_dt"] = pd.Timestamp.now()
-
-        # Subreddit fallback
         if "Subreddit" not in df.columns:
             df["Subreddit"] = "Unknown"
 
 # ──────────────────────────────────────────────────────────────
-#  Enrich & visualise
+#  Analyse / plot
 # ──────────────────────────────────────────────────────────────
 if df is not None and not df.empty:
     df["Post_dt"] = pd.to_datetime(df["Post_dt"], errors="coerce")
     df.dropna(subset=["Post_dt"], inplace=True)
-    df["Post_date"] = df["Post_dt"].dt.date  # use plain date for clarity
+    df["Post_date"] = df["Post_dt"].dt.date
 
     if "Bucket" not in df.columns:
         df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
 
-    # bucket selector
-    sel_buckets = st.sidebar.multiselect(
-        "Select buckets",
-        options=sorted(df["Bucket"].unique()),
-        default=sorted(df["Bucket"].unique()),
-    )
-    df = df[df["Bucket"].isin(sel_buckets)]
+    sel_b = side.multiselect("Select buckets", sorted(df["Bucket"].unique()), default=sorted(df["Bucket"].unique()))
+    df = df[df["Bucket"].isin(sel_b)]
 
-    st.success(f"✅ {len(df)} posts after filtering")
+    st.success(f"✅ {len(df)} posts after filtering")
 
-    # ── Charts ──
     st.subheader("📊 Post volume by bucket")
     st.bar_chart(df["Bucket"].value_counts())
 
     st.subheader("📈 Post trend over time")
-    daily = df.groupby("Post_date").size().rename("Posts")
-    st.line_chart(daily)
+    st.line_chart(df.groupby("Post_date").size())
 
     st.subheader("🧠 Top subreddits")
     st.bar_chart(df["Subreddit"].value_counts().head(10))
@@ -164,4 +159,4 @@ if df is not None and not df.empty:
         height=260,
     )
 
-st.caption("© 2025 Shadee.Care • Live Reddit & Excel dashboard (v9g)")
+st.caption("© 2025 Shadee.Care • Live Reddit & Excel dashboard (v9h)")
