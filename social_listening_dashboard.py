@@ -11,10 +11,14 @@
 
 import re
 import datetime as dt
+from pathlib import Path # This one was in the original code, let's make sure it's there too
+from typing import Dict, List # <--- ADD THIS LINE
+
 import pandas as pd
 import streamlit as st
 import praw
 import googleapiclient.discovery # Added for YouTube API
+
 
 # ───────────────────────────────────────────────────────────────
 #  Helpers
