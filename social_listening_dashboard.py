@@ -52,8 +52,13 @@ def tag_bucket(txt: str) -> str:
     return "other"
 
 # ──────────────────────────────────────────────────────────────
-#  Sidebar – data source + global date range (defaults 30 days)
+#  Sidebar – data source (date range removed for simplicity)
 # ──────────────────────────────────────────────────────────────
+st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
+
+st.sidebar.header("Choose Data Source")
+source_mode = st.sidebar.radio("Select mode", ["🔴 Live Reddit Pull", "📁 Upload Excel"])
+
 st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
 
 st.sidebar.header("Choose Data Source")
@@ -110,11 +115,9 @@ if df is not None and not df.empty:
     if "Bucket" not in df.columns:
         df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
 
-    # date filter
-    mask = (df["Post_date"] >= pd.to_datetime(start_date)) & (df["Post_date"] <= pd.to_datetime(end_date))
-    df = df.loc[mask]
-
-    # bucket filter
+    # --- bucket selector (no date filter) ---
+sel_buckets = st.sidebar.multiselect("Select buckets", df["Bucket"].unique().tolist(), default=df["Bucket"].unique().tolist())
+df = df[df["Bucket"].isin(sel_buckets)]
     sel_buckets = st.sidebar.multiselect("Select buckets", df["Bucket"].unique().tolist(), default=df["Bucket"].unique().tolist())
     df = df[df["Bucket"].isin(sel_buckets)]
 
