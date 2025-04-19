@@ -104,15 +104,19 @@ elif source_mode == "📁 Upload Excel":
     if uploaded_file:
         sheetnames = pd.ExcelFile(uploaded_file).sheet_names
         selected = st.sidebar.selectbox("Choose a sheet / search phrase", sheetnames)
-        df = pd.read_excel(uploaded_file, sheet_name=selected)
+        df = pd.read_excel(uploaded_file, sheet_name=selected, header=2)  # use 3rd row as header (index 2)
 
         st.write("🧾 Columns in uploaded sheet:", df.columns.tolist())
 
         # --- Flexible column detection --- #
         if "Post Content" not in df.columns:
-            first_col = df.columns[0]
-            st.warning(f"⚠️ 'Post Content' not found. Renaming '{first_col}' to 'Post Content'.")
-            df.rename(columns={first_col: "Post Content"}, inplace=True)
+            try:
+                col_E = df.columns[4]  # column E is index 4
+                df.rename(columns={col_E: "Post Content"}, inplace=True)
+                st.warning(f"⚠️ 'Post Content' not found. Using column E header '{col_E}' as 'Post Content'.")
+            except IndexError:
+                st.error("❌ Column E does not exist in this Excel sheet. Please check your file.")
+                st.stop()
 
         if "Bucket" not in df.columns:
             df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
