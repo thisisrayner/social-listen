@@ -1,8 +1,8 @@
-# Shadee.Care – Social Listening Dashboard (v9 k7)
+# Shadee.Care – Social Listening Dashboard (v9 k8)
 # ---------------------------------------------------------------
 # • Excel + date + bucket filters (ALL / sheet, last 30 days default).
 # • Live Reddit Pull: keywords, subreddit, max‑posts, fetch button.
-# • Bucket tagging with regex boundaries; top subreddits (Reddit only; also extracts from Excel URLs).
+# • Bucket tagging with regex boundaries; top subreddits (Reddit only; extracts from Excel URLs).
 # ---------------------------------------------------------------
 
 import re
@@ -35,7 +35,7 @@ def parse_post_date(txt: str) -> pd.Timestamp:
     time_s, day, mon_s, year = m.groups()
     hh, mm = map(int, time_s.split(':'))
     try:
-        return pd.Timestamp(year=int(year), month=MON[mon_s], day=int(day), hour=hh, minute=mm)
+        return pd.Timestamp(year=int(year), month=MON.get(mon_s, 1), day=int(day), hour=hh, minute=mm)
     except Exception:
         return pd.NaT
 
@@ -51,7 +51,7 @@ if "reddit_api" not in st.session_state and "reddit" in st.secrets:
         user_agent=creds["user_agent"],
         check_for_async=False,
     )
-    st.sidebar.markdown(f"🔍 **Reddit client**: `{creds['client_id']}` – anon script scope")
+    st.sidebar.markdown(f"🔍 **Reddit client**: `{creds['client_id']}` – anon script scope")
 
 # ── bucket logic ──────────────────────────────────────────────
 BUCKET_PATTERNS: Dict[str, str] = {
@@ -85,16 +85,16 @@ end_d = dt.date.today()
 start_d = end_d - dt.timedelta(days=30)
 start_d, end_d = st.sidebar.date_input("Select Date Range", (start_d, end_d))
 
-# Utility components
+# Utility functions
 
 def show_top_subreddits(df: pd.DataFrame):
     st.subheader("🧠 Top subreddits")
     if "Subreddit" in df.columns:
-        red = df[df.get("Platform") == "reddit"] if "Platform" in df.columns else df
-        if red.empty:
+        reddit_df = df[df.get("Platform") == "reddit"]
+        if reddit_df.empty:
             st.info("No Reddit data available.")
         else:
-            st.bar_chart(red["Subreddit"].fillna("Unknown").value_counts().head(10))
+            st.bar_chart(reddit_df["Subreddit"].fillna("Unknown").value_counts().head(10))
     else:
         st.info("Subreddit column not present.")
 
@@ -111,6 +111,7 @@ if MODE == "Upload Excel":
     file = st.sidebar.file_uploader("Drag & drop Excel", type=["xlsx"])
     if not file:
         st.stop()
+
     with pd.ExcelFile(file) as xl:
         sheets = xl.sheet_names
     choice = st.sidebar.selectbox("Sheet", ["ALL"] + sheets)
@@ -125,30 +126,32 @@ if MODE == "Upload Excel":
                 df_s["Bucket"] = df_s["Post Content"].apply(tag_bucket)
                 if "Post URL" in df_s.columns:
                     df_s["Subreddit"] = (
-                        df_s["Post URL"].str.extract(r"(?:https?://)?(?:www\.)?reddit\.com/r/([^/]+)/", expand=False)
-                        .fillna("Unknown")
+                        df_s["Post URL"].str.extract(r"reddit\.com/r/([^/]+)/", expand=False)
+                                  .fillna("Unknown")
                     )
                 frames.append(df_s)
             else:
-                st.warning(f"Sheet '{sh}' missing columns → skipped")
+                st.warning(f"Sheet '{sh}' missing required columns → skipped")
 
     if not frames:
-        st.error("No valid sheets.")
+        st.error("No valid sheets found.")
         st.stop()
     df = pd.concat(frames, ignore_index=True)
 
+    # Filter by date
+    df = df.dropna(subset=["Post_dt"]).copy()
+    df = df[(df["Post_dt"].dt.date >= start_d) & (df["Post_dt"].dt.date <= end_d)]
+    if df.empty:
+        st.info("No posts in selected window.")
+        st.stop()
+
+    # Bucket selection
     buckets = sorted(df["Bucket"].unique())
     sel = st.sidebar.multiselect("Select buckets", buckets, default=buckets)
     df = df[df["Bucket"].isin(sel)]
-
-    df = df.dropna(subset=["Post_dt"])
-    df = df[(df["Post_dt"].dt.date >= start_d) & (df["Post_dt"].dt.date <= end_d)]
-    if df.empty:
-        st.info("No posts in range.")
-        st.stop()
-
     st.success(f"✅ {len(df)} posts after filtering")
 
+    # Charts & samples
     st.subheader("📊 Post volume by bucket")
     st.bar_chart(df["Bucket"].value_counts())
 
@@ -163,24 +166,31 @@ if MODE == "Upload Excel":
     show_top_subreddits(df)
     show_content_sample(df)
 
+# ──────────────────────────────────────────────────────────────
+#  Live Reddit Pull Mode
+# ──────────────────────────────────────────────────────────────
 else:
-    phrase    = st.sidebar.text_input("Search phrase (OR‑supported)", "lonely OR therapy")
+    phrase = st.sidebar.text_input("Search phrase (OR‑supported)", "lonely OR therapy")
     subreddit = st.sidebar.text_input("Subreddit (e.g. depression)", "depression")
-    max_p     = st.sidebar.slider("Max posts to fetch", 10, 300, 50)
+    max_p = st.sidebar.slider("Max posts to fetch", 10, 300, 50)
 
     if st.sidebar.button("🔍 Fetch live posts"):
         reddit = st.session_state.get("reddit_api")
         if not reddit:
-            st.error("Reddit API not set.")
+            st.error("Reddit API not configured.")
             st.stop()
-        st.info(f"Fetching from r/{subreddit}... ")
+
+        st.info(f"Fetching from r/{subreddit}...")
         posts = [
-            {"Post_dt": dt.datetime.fromtimestamp(p.created_utc),
-             "Post Content": p.title + "\n\n" + (p.selftext or ""),
-             "Subreddit": p.subreddit.display_name,
-             "Platform": "reddit"}
+            {
+                "Post_dt": dt.datetime.fromtimestamp(p.created_utc),
+                "Post Content": p.title + "\n\n" + (p.selftext or ""),
+                "Subreddit": p.subreddit.display_name,
+                "Platform": "reddit",
+            }
             for p in reddit.subreddit(subreddit).search(phrase, limit=max_p)
         ]
+
         if not posts:
             st.warning("No posts returned.")
             st.stop()
