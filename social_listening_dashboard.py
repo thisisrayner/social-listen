@@ -1,4 +1,4 @@
-# Shadee.Care – Social Listening Dashboard (v9 k5)
+# Shadee.Care – Social Listening Dashboard (v9 k6)
 # ---------------------------------------------------------------
 # • Excel + date + bucket filters (ALL / sheet, last 30 days default).
 # • Live Reddit Pull: keywords, subreddit, max‑posts, fetch button.
@@ -131,20 +131,18 @@ if MODE == "Upload Excel":
     df = pd.concat(frames, ignore_index=True)
     df["Bucket"] = df["Post Content"].apply(tag_bucket)
 
-    # Allow users to select from all buckets before date filtering
+    # Bucket filter before date trimming
     buckets = sorted(df["Bucket"].unique())
     sel = st.sidebar.multiselect("Select buckets", buckets, default=buckets)
     df = df[df["Bucket"].isin(sel)]
 
+    # Date filtering
     df = df.dropna(subset=["Post_dt"])
     df = df[(df["Post_dt"].dt.date >= start_d) & (df["Post_dt"].dt.date <= end_d)]
     if df.empty:
         st.info("No posts in range.")
         st.stop()
 
-    buckets = sorted(df["Bucket"].unique())
-    sel = st.sidebar.multiselect("Select buckets", buckets, default=buckets)
-    df = df[df["Bucket"].isin(sel)]
     st.success(f"✅ {len(df)} posts after filtering")
 
     st.subheader("📊 Post volume by bucket")
