@@ -1,5 +1,5 @@
 ```python
-# Shadee.Care – Social Listening Dashboard (v9 k4)
+# Shadee.Care – Social Listening Dashboard (v9 k5)
 # ---------------------------------------------------------------
 # • Excel + date + bucket filters (ALL / sheet, last 30 days default).
 # • Live Reddit Pull: keywords, subreddit, max‑posts, fetch button.
@@ -17,6 +17,7 @@ import praw
 # ──────────────────────────────────────────────────────────────
 #  Helpers
 # ──────────────────────────────────────────────────────────────
+# Matches strings like "05:44 19 Apr 2025"
 DATE_RE = re.compile(r"(\d{1,2}:\d{2})\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})")
 MON = {m: i for i, m in enumerate(
     ["Jan","Feb","Mar","Apr","May","Jun",
@@ -24,17 +25,21 @@ MON = {m: i for i, m in enumerate(
 
 
 def parse_post_date(txt: str) -> pd.Timestamp:
+    """
+    Parse strings like "05:44 19 Apr 2025" into a pandas Timestamp, or return NaT.
+    """
     if not isinstance(txt, str):
         return pd.NaT
     m = DATE_RE.search(txt)
     if not m:
         return pd.NaT
     time_s, day, mon_s, year = m.groups()
-    hh, mm = map(int, time_s.split("":"))  # noqa: W605
+    hh, mm = map(int, time_s.split(":"))
     try:
         return pd.Timestamp(year=int(year), month=MON[mon_s], day=int(day), hour=hh, minute=mm)
     except Exception:
         return pd.NaT
+
 
 # ── config ────────────────────────────────────────────────────
 st.set_page_config(page_title="Shadee Live Listening", layout="wide", initial_sidebar_state="expanded")
@@ -81,12 +86,12 @@ end_d = dt.date.today()
 start_d = end_d - dt.timedelta(days=30)
 start_d, end_d = st.sidebar.date_input("Select Date Range", (start_d, end_d))
 
-# Utilities
+# Utility components
 
 def show_top_subreddits(df: pd.DataFrame):
     st.subheader("🧠 Top subreddits")
     if "Subreddit" in df.columns:
-        red = df[df["Platform"] == "reddit"] if "Platform" in df.columns else df
+        red = df[df.get("Platform") == "reddit"] if "Platform" in df.columns else df
         if red.empty:
             st.info("No Reddit data available.")
         else:
@@ -97,23 +102,23 @@ def show_top_subreddits(df: pd.DataFrame):
 
 def show_content_sample(df: pd.DataFrame):
     st.subheader("📄 Content sample")
-    cols = [c for c in ["Post_dt","Bucket","Subreddit","Platform","Post Content"] if c in df.columns]
+    cols = [c for c in ("Post_dt","Bucket","Subreddit","Platform","Post Content") if c in df.columns]
     st.dataframe(df[cols].head(50), height=300)
 
 # ──────────────────────────────────────────────────────────────
 #  Upload Excel Mode
 # ──────────────────────────────────────────────────────────────
 if MODE == "Upload Excel":
-    file = st.sidebar.file_uploader("Drag & drop Excel", type=["xlsx"] )
+    file = st.sidebar.file_uploader("Drag & drop Excel", type=["xlsx"])
     if not file:
         st.stop()
     with pd.ExcelFile(file) as xl:
         sheets = xl.sheet_names
-    choice = st.sidebar.selectbox("Sheet", ["ALL"]+sheets)
+    choice = st.sidebar.selectbox("Sheet", ["ALL"] + sheets)
 
     frames: List[pd.DataFrame] = []
     with pd.ExcelFile(file) as xl:
-        for sh in (sheets if choice=="ALL" else [choice]):
+        for sh in (sheets if choice == "ALL" else [choice]):
             df_s = xl.parse(sh, skiprows=2)
             if {"Post Date","Post Content"}.issubset(df_s.columns):
                 df_s["Post_dt"] = df_s["Post Date"].map(parse_post_date)
@@ -127,7 +132,7 @@ if MODE == "Upload Excel":
     df = pd.concat(frames, ignore_index=True)
     df["Bucket"] = df["Post Content"].apply(tag_bucket)
     df = df.dropna(subset=["Post_dt"])
-    df = df[(df["Post_dt"].dt.date>=start_d)&(df["Post_dt"].dt.date<=end_d)]
+    df = df[(df["Post_dt"].dt.date >= start_d) & (df["Post_dt"].dt.date <= end_d)]
     if df.empty:
         st.info("No posts in range.")
         st.stop()
@@ -144,7 +149,7 @@ if MODE == "Upload Excel":
     trend = (
         df.set_index("Post_dt")
           .assign(day=lambda d: d.index.date)
-          .pivot_table(index="day",columns="Bucket",values="Post Content",aggfunc="count").fillna(0)
+          .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count").fillna(0)
     )
     st.line_chart(trend)
 
@@ -154,7 +159,7 @@ if MODE == "Upload Excel":
 else:
     phrase    = st.sidebar.text_input("Search phrase (OR-supported)", "lonely OR therapy")
     subreddit = st.sidebar.text_input("Subreddit (e.g. depression)", "depression")
-    max_p     = st.sidebar.slider("Max posts to fetch",10,300,50)
+    max_p     = st.sidebar.slider("Max posts to fetch", 10, 300, 50)
 
     if st.sidebar.button("🔍 Fetch live posts"):
         reddit = st.session_state.get("reddit_api")
@@ -164,7 +169,7 @@ else:
         st.info(f"Fetching from r/{subreddit}... ")
         posts = [
             {"Post_dt": dt.datetime.fromtimestamp(p.created_utc),
-             "Post Content": p.title+"\n\n"+(p.selftext or ""),
+             "Post Content": p.title + "\n\n" + (p.selftext or ""),
              "Subreddit": p.subreddit.display_name,
              "Platform": "reddit"}
             for p in reddit.subreddit(subreddit).search(phrase, limit=max_p)
@@ -184,10 +189,11 @@ else:
         trend = (
             df.set_index("Post_dt")
               .assign(day=lambda d: d.index.date)
-              .pivot_table(index="day",columns="Bucket",values="Post Content",aggfunc="count").fillna(0)
+              .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count").fillna(0)
         )
         st.line_chart(trend)
 
         show_top_subreddits(df)
         show_content_sample(df)
 ```
+ 
