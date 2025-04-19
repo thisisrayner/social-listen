@@ -104,6 +104,13 @@ elif source_mode == "📁 Upload Excel":
         sheetnames = pd.ExcelFile(uploaded_file).sheet_names
         selected = st.sidebar.selectbox("Choose a sheet / search phrase", sheetnames)
         df = pd.read_excel(uploaded_file, sheet_name=selected)
+
+        st.write("🧾 Columns in uploaded sheet:", df.columns.tolist())
+
+        if "Post Content" not in df.columns:
+            st.error("❌ 'Post Content' column not found in this Excel sheet. Please check your file.")
+            st.stop()
+
         if "Bucket" not in df.columns:
             df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
     else:
