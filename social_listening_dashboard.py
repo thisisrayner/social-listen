@@ -23,6 +23,7 @@ MON = {m: i for i, m in enumerate(
     ["Jan","Feb","Mar","Apr","May","Jun",
      "Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
 
+
 def parse_post_date(txt: str):
     if not isinstance(txt, str):
         return pd.NaT
@@ -65,6 +66,15 @@ BUCKET_PATTERNS: Dict[str, str] = {
 }
 COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
 
+
+def tag_bucket(text: str):
+    if not isinstance(text, str):
+        return "other"
+    for name, pat in COMPILED.items():
+        if pat.search(text):
+            return name
+    return "other"
+
 # ── sidebar ─────────────────────────────────────────────────────
 st.sidebar.header("📊 Choose Data Source")
 MODE = st.sidebar.radio("Select mode", ("Upload Excel", "Live Reddit Pull"), index=0)
@@ -93,7 +103,7 @@ if MODE == "Upload Excel":
 
     dfs: List[pd.DataFrame] = []
     with pd.ExcelFile(xl_file) as xl:
-        for sh in (sheets if sheet_choice == "ALL" else [sheet_choice]):
+        for sh in (sheets if sheet_choice.upper() == "ALL" else [sheet_choice]):
             df_s = xl.parse(sh, skiprows=2)
             if {"Post Date", "Post Content"}.issubset(df_s.columns):
                 df_s["Post_dt"] = df_s["Post Date"].map(parse_post_date)
@@ -132,20 +142,14 @@ if MODE == "Upload Excel":
     )
     st.line_chart(trend)
 
-    st.subheader("🧠 Top sources (subreddit / channel)")
-    source_col = (
-        "Subreddit" if "Subreddit" in df.columns and df["Subreddit"].notna().any() else "Username"
-    )
-    if source_col in df.columns:
-        st.bar_chart(df[source_col].fillna("Unknown").value_counts().head(10))
-    else:
-        st.info("No valid source column found.")
+    st.subheader("📈 Bucket-level trends")
+    st.line_chart(trend)
+
+    st.subheader("🧠 Top subreddits")
+    show_top_subreddits(df)
 
     st.subheader("📄 Content sample")
-    show_cols = [
-        c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"] if c in df.columns
-    ]
-    # Show up to 100 rows, with a visible window of ~20 rows
+    show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"] if c in df.columns]
     st.dataframe(df[show_cols].head(100), height=600)
 
 # ──────────────────────────────────────────────────────────────
@@ -164,15 +168,14 @@ else:
 
         st.info(f"Fetching from r/{subreddit}...")
         results = reddit.subreddit(subreddit).search(phrase, limit=max_posts)
-        posts = [
-            {
+        posts = []
+        for p in results:
+            posts.append({
                 "Post_dt": dt.datetime.fromtimestamp(p.created_utc),
                 "Post Content": p.title + "\n\n" + (p.selftext or ""),
                 "Subreddit": p.subreddit.display_name,
                 "Platform": "reddit",
-            }
-            for p in results
-        ]
+            })
 
         if not posts:
             st.warning("No posts returned.")
@@ -189,16 +192,15 @@ else:
         st.subheader("📈 Post trend over time")
         trend = (
             df.set_index("Post_dt")
-            .assign(day=lambda _d: _d.index.date)
-            .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count")
-            .fillna(0)
+                .assign(day=lambda _d: _d.index.date)
+                .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count")
+                .fillna(0)
         )
         st.line_chart(trend)
 
-        st.subheader("🧠 Top sources (subreddit)")
-        st.bar_chart(df["Subreddit"].fillna("Unknown").value_counts().head(10))
+        st.subheader("🧠 Top subreddits")
+        show_top_subreddits(df)
 
         st.subheader("📄 Content sample")
         show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]
-        # Show up to 100 rows, with a visible window of ~20 rows
         st.dataframe(df[show_cols].head(100), height=600)
