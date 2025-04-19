@@ -1,9 +1,9 @@
-# Shadee.Care – Social Listening Dashboard (v9 k3)
+# Shadee.Care – Social Listening Dashboard (v9 k4)
 # ---------------------------------------------------------------
 # • Excel path unchanged (ALL + date + bucket filters).
 # • Live Reddit Pull restored: keywords, subreddit, max‑posts, fetch button.
 # • Bucket tagging improved (tight regex); clearer subreddit/channel labeling.
-# • Bucket-level trend lines and top sources (Reddit/YouTube aware).
+# • Bucket-level trend lines and top subreddits (Excel & Reddit).
 # ---------------------------------------------------------------
 
 import re
@@ -65,7 +65,6 @@ BUCKET_PATTERNS: Dict[str, str] = {
     'family_loss_or_absence': r"\b(i miss my (?:mom|dad|parent|family)|grew up without (?:a|my) (?:dad|mom)|orphan|parent passed away|lost (?:my )?(?:dad|mom|guardian))\b"
 }
 COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
-
 
 def tag_bucket(text: str):
     if not isinstance(text, str):
@@ -142,22 +141,32 @@ if MODE == "Upload Excel":
     )
     st.line_chart(trend)
 
-    st.subheader("📈 Bucket-level trends")
-    st.line_chart(trend)
-
     st.subheader("🧠 Top subreddits")
     show_top_subreddits(df)
 
     st.subheader("📄 Content sample")
     show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"] if c in df.columns]
-    st.dataframe(df[show_cols].head(100), height=600)
+    st.dataframe(df[show_cols].head(20), height=400)
 
 # ──────────────────────────────────────────────────────────────
 #  Live Reddit Pull Mode
 # ──────────────────────────────────────────────────────────────
 else:
-    phrase = st.sidebar.text_input("Search phrase (OR‑supported)", "lonely OR therapy")
-    subreddit = st.sidebar.text_input("Subreddit (e.g. depression or all)", "depression")
+    phrase = st.sidebar.text_input(
+        "Search phrase (OR‑supported)", "lonely OR therapy",
+        help="Use OR between keywords for broad match, e.g. 'lonely OR therapy'"
+    )
+    raw_sub = st.sidebar.text_input(
+        "Subreddit (e.g. depression)", "depression",
+        help="Enter one subreddit or multiple separated by '+', e.g. depression+mentalhealth. Boolean OR not supported."
+    )
+    # convert any OR to '+' and warn
+    if ' OR ' in raw_sub:
+        st.sidebar.warning("Boolean OR not supported for subreddits; converting to '+'")
+        subreddit = '+'.join([s.strip() for s in raw_sub.split(' OR ')])
+    else:
+        subreddit = raw_sub
+
     max_posts = st.sidebar.slider("Max posts to fetch", 10, 300, 50)
 
     if st.sidebar.button("🔍 Fetch live posts"):
@@ -192,9 +201,9 @@ else:
         st.subheader("📈 Post trend over time")
         trend = (
             df.set_index("Post_dt")
-                .assign(day=lambda _d: _d.index.date)
-                .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count")
-                .fillna(0)
+              .assign(day=lambda _d: _d.index.date)
+              .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count")
+              .fillna(0)
         )
         st.line_chart(trend)
 
@@ -203,4 +212,4 @@ else:
 
         st.subheader("📄 Content sample")
         show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]
-        st.dataframe(df[show_cols].head(100), height=600)
+        st.dataframe(df[show_cols].head(20), height=400)
