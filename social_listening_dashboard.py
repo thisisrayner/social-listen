@@ -1,9 +1,10 @@
-# Shadee.Care – Social Listening Dashboard (v9 k5)
+# Shadee.Care – Social Listening Dashboard (v9 k6)
 # ---------------------------------------------------------------
 # • Excel path unchanged (ALL + date + bucket filters).
 # • Live Reddit Pull restored: keywords, subreddit, max‑posts, fetch button.
 # • Bucket tagging improved (tight regex); clearer subreddit/channel labeling.
 # • Bucket-level trend lines and top subreddits (Excel & Reddit).
+# • Upload Excel now extracts **Subreddit** from Post URL when missing.
 # ---------------------------------------------------------------
 
 import re
@@ -115,6 +116,13 @@ if MODE == "Upload Excel":
         st.stop()
 
     df = pd.concat(dfs, ignore_index=True)
+    # extract subreddit from Post URL if missing
+    if "Post URL" in df.columns:
+        df["Subreddit"] = (
+            df["Post URL"].astype(str)
+              .str.extract(r"reddit\.com/r/([^/]+)/")[0]
+              .fillna("Unknown")
+        )
     df["Bucket"] = df["Post Content"].apply(tag_bucket)
     df = df.dropna(subset=["Post_dt"]).copy()
     df = df[(df["Post_dt"].dt.date >= start_d) & (df["Post_dt"].dt.date <= end_d)]
@@ -135,9 +143,9 @@ if MODE == "Upload Excel":
     st.subheader("📈 Post trend over time")
     trend = (
         df.set_index("Post_dt")
-        .assign(day=lambda _d: _d.index.date)
-        .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count")
-        .fillna(0)
+          .assign(day=lambda _d: _d.index.date)
+          .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count")
+          .fillna(0)
     )
     st.line_chart(trend)
 
