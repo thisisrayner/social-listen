@@ -21,6 +21,13 @@ if "reddit_api" not in st.session_state:
         user_agent=creds["user_agent"]
     )
     st.session_state.reddit_api = reddit
+    # Debug output to verify credentials
+    st.write("🔍 Loaded client_id:", creds["client_id"])
+    st.write("🔍 Loaded user_agent:", creds["user_agent"])
+    try:
+        st.write("✅ Reddit identity:", reddit.user.me())
+    except Exception as e:
+        st.error(f"❌ Reddit identity check failed: {e}")
 
 # ---------- Regex bucket patterns ---------- #
 BUCKET_PATTERNS: Dict[str, str] = {
