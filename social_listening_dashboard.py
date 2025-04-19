@@ -130,6 +130,12 @@ if MODE == "Upload Excel":
         st.stop()
     df = pd.concat(frames, ignore_index=True)
     df["Bucket"] = df["Post Content"].apply(tag_bucket)
+
+    # Allow users to select from all buckets before date filtering
+    buckets = sorted(df["Bucket"].unique())
+    sel = st.sidebar.multiselect("Select buckets", buckets, default=buckets)
+    df = df[df["Bucket"].isin(sel)]
+
     df = df.dropna(subset=["Post_dt"])
     df = df[(df["Post_dt"].dt.date >= start_d) & (df["Post_dt"].dt.date <= end_d)]
     if df.empty:
