@@ -28,7 +28,11 @@ if "reddit_api" not in st.session_state:
     st.write("🔍 Loaded client_id:", creds["client_id"])
     st.write("🔍 Loaded user_agent:", creds["user_agent"])
     try:
-        st.write("✅ Reddit identity:", reddit.user.me())
+        user = reddit.user.me()
+        if user:
+            st.success(f"✅ Reddit identity: /u/{user}")
+        else:
+            st.warning("⚠️ Reddit identity is None — check scope or auth mode")
     except Exception as e:
         st.error(f"❌ Reddit identity check failed: {e}")
 
