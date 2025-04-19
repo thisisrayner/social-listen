@@ -1,4 +1,4 @@
-# Shadee.Care – Social Listening Dashboard (v9 k8)
+# Shadee.Care – Social Listening Dashboard (v9 k9)
 # ---------------------------------------------------------------
 # • Excel + date + bucket filters (ALL / sheet, last 30 days default).
 # • Live Reddit Pull: keywords, subreddit, max‑posts, fetch button.
@@ -90,16 +90,11 @@ start_d, end_d = st.sidebar.date_input("Select Date Range", (start_d, end_d))
 def show_top_subreddits(df: pd.DataFrame):
     st.subheader("🧠 Top subreddits")
     if "Subreddit" in df.columns:
-        # For Excel imports, all entries have Subreddit; for live pulls, filter Platform
-        reddit_df = df
-        if "Platform" in df.columns:
-            reddit_df = df[df["Platform"] == "reddit"]
-        if reddit_df.empty:
-            st.info("No Reddit data available.")
-        else:
-            st.bar_chart(reddit_df["Subreddit"].fillna("Unknown").value_counts().head(10))
+        counts = df["Subreddit"].fillna("Unknown").value_counts().head(10)
+        st.bar_chart(counts)
     else:
         st.info("Subreddit column not present.")
+
 
 def show_content_sample(df: pd.DataFrame):
     st.subheader("📄 Content sample")
