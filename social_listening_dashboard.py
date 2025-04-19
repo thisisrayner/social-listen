@@ -77,7 +77,7 @@ BUCKET_PATTERNS: Dict[str, str] = {
 }
 
 # compile once
-COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()} = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
+COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}(pat, re.I) for name, pat in BUCKET_PATTERNS.items()} = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
 
 def tag_bucket(txt: str) -> str:
     low = txt.lower()
