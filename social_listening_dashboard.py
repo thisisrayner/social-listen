@@ -60,6 +60,8 @@ st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
 st.sidebar.header("Choose Data Source")
 source_mode = st.sidebar.radio("Select mode", ["🔴 Live Reddit Pull", "📁 Upload Excel"], horizontal=False)
 
+df = None
+
 if source_mode == "🔴 Live Reddit Pull":
     query = st.sidebar.text_input("Search phrase (keywords, OR-supported)", "lonely OR therapy")
     subr = st.sidebar.text_input("Subreddit (e.g. depression or all)", "depression")
@@ -115,11 +117,18 @@ elif source_mode == "📁 Upload Excel":
 
         if "Bucket" not in df.columns:
             df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
+
+        # Optional fallback columns
+        if "Post_dt" not in df.columns:
+            df["Post_dt"] = pd.Timestamp("now")
+
+        if "Subreddit" not in df.columns:
+            df["Subreddit"] = "Unknown"
     else:
         st.stop()
 
 # ---------- Shared visual section ---------- #
-if 'df' in locals():
+if df is not None:
     st.success(f"✅ Loaded {len(df)} posts for analysis")
 
     st.subheader("📊 Post volume by bucket")
@@ -130,7 +139,10 @@ if 'df' in locals():
         st.bar_chart(df["Subreddit"].value_counts().head(10))
 
     st.subheader("📄 Content sample")
-    st.dataframe(df[["Post_dt", "Bucket", "Subreddit", "Post Content"]].head(30), height=300)
+    try:
+        st.dataframe(df[["Post_dt", "Bucket", "Subreddit", "Post Content"]].head(30), height=300)
+    except KeyError:
+        st.warning("Some expected columns missing in Excel. Skipping preview.")
 
     if "other" in df["Bucket"].unique():
         with st.expander("🔍 Top words in 'other'"):
