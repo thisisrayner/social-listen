@@ -30,7 +30,7 @@ def parse_post_date(txt: str):
     if not m:
         return pd.NaT
     time_s, day, mon_s, year = m.groups()
-    hh, mm = map(int, time_s.split("":""))
+    hh, mm = map(int, time_s.split(":"))
     try:
         return dt.datetime(int(year), MON[mon_s], int(day), hh, mm)
     except ValueError:
