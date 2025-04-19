@@ -25,7 +25,6 @@ if "reddit_api" not in st.session_state:
         check_for_async=False
     )
     st.session_state.reddit_api = reddit
-    # Debug output to verify credentials
     st.write("🔍 Loaded client_id:", creds["client_id"])
     st.write("🔍 Loaded user_agent:", creds["user_agent"])
     st.warning("⚠️ Reddit identity check skipped – assumed anonymous access")
@@ -118,7 +117,6 @@ elif source_mode == "📁 Upload Excel":
         if "Bucket" not in df.columns:
             df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
 
-        # Optional fallback columns
         if "Post_dt" not in df.columns:
             df["Post_dt"] = pd.Timestamp("now")
 
@@ -131,6 +129,21 @@ elif source_mode == "📁 Upload Excel":
 if df is not None:
     st.success(f"✅ Loaded {len(df)} posts for analysis")
 
+    # Interactive filters
+    st.sidebar.subheader("Filter Options")
+    unique_buckets = df["Bucket"].unique().tolist()
+    selected_buckets = st.sidebar.multiselect("Select Buckets", unique_buckets, default=unique_buckets)
+
+    min_date = df["Post_dt"].min()
+    max_date = df["Post_dt"].max()
+    date_range = st.sidebar.date_input("Select Date Range", [min_date, max_date])
+
+    if len(date_range) == 2:
+        start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+        df = df[df["Post_dt"].between(start_date, end_date)]
+
+    df = df[df["Bucket"].isin(selected_buckets)]
+
     st.subheader("📊 Post volume by bucket")
     st.bar_chart(df["Bucket"].value_counts().sort_values(ascending=False))
 
@@ -140,9 +153,10 @@ if df is not None:
 
     st.subheader("📄 Content sample")
     try:
-        st.dataframe(df[["Post_dt", "Bucket", "Subreddit", "Post Content"]].head(30), height=300)
-    except KeyError:
-        st.warning("Some expected columns missing in Excel. Skipping preview.")
+        preview_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]
+        st.dataframe(df[preview_cols].head(30), height=300)
+    except Exception as e:
+        st.warning(f"⚠️ Could not render content sample: {e}")
 
     if "other" in df["Bucket"].unique():
         with st.expander("🔍 Top words in 'other'"):
