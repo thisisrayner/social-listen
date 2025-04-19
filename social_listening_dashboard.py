@@ -12,6 +12,9 @@ import streamlit as st
 import praw
 from pathlib import Path
 
+# ---------- Streamlit page config must be first ---------- #
+st.set_page_config(page_title="Shadee Live Listening", layout="wide")
+
 # ---------- Reddit API init ---------- #
 if "reddit_api" not in st.session_state:
     creds = st.secrets["reddit"]
@@ -54,7 +57,6 @@ def tag_bucket(text: str) -> str:
     return "other"
 
 # ---------- Streamlit UI ---------- #
-st.set_page_config(page_title="Shadee Live Listening", layout="wide")
 st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
 
 st.sidebar.header("Choose Data Source")
