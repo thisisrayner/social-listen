@@ -217,4 +217,4 @@ else:
 
         st.subheader("📄 Content sample")
         show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]
-        st.dataframe(df[show_cols].head(20), height=800)
+        st.dataframe(df[show_cols].head(20), height=600)
