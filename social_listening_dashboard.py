@@ -21,20 +21,14 @@ if "reddit_api" not in st.session_state:
     reddit = praw.Reddit(
         client_id=creds["client_id"],
         client_secret=creds["client_secret"],
-        user_agent=creds["user_agent"]
+        user_agent=creds["user_agent"],
+        check_for_async=False
     )
     st.session_state.reddit_api = reddit
     # Debug output to verify credentials
     st.write("🔍 Loaded client_id:", creds["client_id"])
     st.write("🔍 Loaded user_agent:", creds["user_agent"])
-    try:
-        user = reddit.user.me()
-        if user:
-            st.success(f"✅ Reddit identity: /u/{user}")
-        else:
-            st.warning("⚠️ Reddit identity is None — check scope or auth mode")
-    except Exception as e:
-        st.error(f"❌ Reddit identity check failed: {e}")
+    st.warning("⚠️ Reddit identity check skipped – assumed anonymous access")
 
 # ---------- Regex bucket patterns ---------- #
 BUCKET_PATTERNS: Dict[str, str] = {
