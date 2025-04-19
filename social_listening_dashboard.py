@@ -1,4 +1,4 @@
-# Shadee.Care – Social Listening Dashboard (v9 k4)
+# Shadee.Care – Social Listening Dashboard (v9 k5)
 # ---------------------------------------------------------------
 # • Excel path unchanged (ALL + date + bucket filters).
 # • Live Reddit Pull restored: keywords, subreddit, max‑posts, fetch button.
@@ -141,7 +141,6 @@ if MODE == "Upload Excel":
     )
     st.line_chart(trend)
 
-    st.subheader("🧠 Top subreddits")
     show_top_subreddits(df)
 
     st.subheader("📄 Content sample")
@@ -158,9 +157,8 @@ else:
     )
     raw_sub = st.sidebar.text_input(
         "Subreddit (e.g. depression)", "depression",
-        help="Enter one subreddit or multiple separated by '+', e.g. depression+mentalhealth. Boolean OR not supported."
+        help="Enter one subreddit or multiple separated by '+', e.g. depression+mentalhealth+anxiety. Popular: depression, mentalhealth, anxiety, teenmentalhealth. Boolean OR not supported."
     )
-    # convert any OR to '+' and warn
     if ' OR ' in raw_sub:
         st.sidebar.warning("Boolean OR not supported for subreddits; converting to '+'")
         subreddit = '+'.join([s.strip() for s in raw_sub.split(' OR ')])
@@ -207,9 +205,8 @@ else:
         )
         st.line_chart(trend)
 
-        st.subheader("🧠 Top subreddits")
         show_top_subreddits(df)
 
         st.subheader("📄 Content sample")
         show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]
-        st.dataframe(df[show_cols].head(20), height=400)
+        st.dataframe(df[show_cols].head(20), height=600)
