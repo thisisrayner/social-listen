@@ -28,7 +28,6 @@ import googleapiclient.discovery
 DATE_RE = re.compile(r"(\d{1,2}:\d{2})\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})")
 MON = {m: i for i, m in enumerate(
     ["Jan","Feb","Mar","Apr","May","Jun",
-     ["Jan","Feb","Mar","Apr","May","Jun",
       "Jul","Aug","Sep","Oct","Nov","Dec"], 1)} # Typo fixed here
 
 
