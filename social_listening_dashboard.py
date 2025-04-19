@@ -1,4 +1,4 @@
-# Shadee.Care – Social Listening Dashboard (v9 k3)
+# Shadee.Care – Social Listening Dashboard (v9 k3)
 # ---------------------------------------------------------------
 # • Excel path unchanged (ALL + date + bucket filters).
 # • Live Reddit Pull restored: keywords, subreddit, max‑posts, fetch button.
@@ -8,7 +8,6 @@
 
 import re
 import datetime as dt
-from pathlib import Path
 from typing import Dict, List
 
 import pandas as pd
@@ -23,10 +22,13 @@ MON = {m: i for i, m in enumerate(
     ["Jan","Feb","Mar","Apr","May","Jun",
      "Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
 
+
 def parse_post_date(txt: str):
-    if not isinstance(txt, str): return pd.NaT
+    if not isinstance(txt, str):
+        return pd.NaT
     m = DATE_RE.search(txt)
-    if not m: return pd.NaT
+    if not m:
+        return pd.NaT
     time_s, day, mon_s, year = m.groups()
     hh, mm = map(int, time_s.split(":"))
     try:
@@ -34,7 +36,7 @@ def parse_post_date(txt: str):
     except ValueError:
         return pd.NaT
 
-# ── config ─────────────────────────────────────────────────────
+# ── config ────────────────────────────────────────────────────
 st.set_page_config("Shadee Live Listening", layout="wide", initial_sidebar_state="expanded")
 
 if "reddit_api" not in st.session_state and "reddit" in st.secrets:
@@ -47,7 +49,7 @@ if "reddit_api" not in st.session_state and "reddit" in st.secrets:
     )
     st.sidebar.markdown(f"🔍 **Reddit client**: `{creds['client_id']}` – *anon script scope*")
 
-# ── bucket logic ───────────────────────────────────────────────
+# ── bucket logic ──────────────────────────────────────────────
 BUCKET_PATTERNS: Dict[str, str] = {
     "self_blame": r"\b(hate(?:s|d)? (?:myself|me)|everyone hate(?:s|d)? me|worthless|i (?:don'?t|do not) deserve to live|i'?m a failure|blame myself|all my fault)\b",
     "cost_concern": r"\b(can'?t afford|too expensive|cost of therapy|insurance won'?t|no money for help)\b",
@@ -56,18 +58,19 @@ BUCKET_PATTERNS: Dict[str, str] = {
     "relationship_breakup": r"\b(break[- ]?up|dump(?:ed)?|heart ?broken|lost my (?:partner|girlfriend|boyfriend)|she left me|he left me)\b",
     "friendship_drama": r"\b(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed)?|lost)|no friends?|friends don'?t care)\b",
     "crying_distress": r"\b(can'?t stop crying|keep on crying|crying every night|cry myself to sleep)\b",
-    "depression_misery": r"\b(i['’]?m (so )?(depressed|miserable|numb|empty)|i feel dead inside|life is meaningless|hopeless|no reason to live|can't go on|don['’]?t want to exist|done with life)\b",
-    "loneliness_isolation": r"\b(i['’]?m (so )?(lonely|alone|isolated)|nobody (cares|loves me)|no one to talk to|feel invisible|no support system|abandoned)\b",
-    "family_conflict": r"\b(my (mom|dad|parents|family) (hate me|don['’]?t understand|abusive|arguing|don['’]?t care)|fight with (mom|dad|family)|toxic family|family pressure|neglect)\b",
+    "depression_misery": r"\b(i['’"]?m (so )?(depressed|miserable|numb|empty)|i feel dead inside|life is meaningless|hopeless|no reason to live|can't go on|don['’"]?t want to exist|done with life)\b",
+    "loneliness_isolation": r"\b(i['’"]?m (so )?(lonely|alone|isolated)|nobody (cares|loves me)|no one to talk to|feel invisible|no support system|abandoned)\b",
+    "family_conflict": r"\b(my (mom|dad|parents|family) (hate me|don['’"]?t understand|abusive|arguing|don['’"]?t care)|fight with (mom|dad|family)|toxic family|family pressure|neglect)\b",
     "family_loss_or_absence": r"\b(i miss my (mom|dad|parent|family)|grew up without (a|my) (dad|mom)|orphan|parent passed away|lost (my )?(dad|mom|guardian))\b"
 }
 COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
 
-
 def tag_bucket(text: str):
-    if not isinstance(text, str): return "other"
+    if not isinstance(text, str):
+        return "other"
     for name, pat in COMPILED.items():
-        if pat.search(text): return name
+        if pat.search(text):
+            return name
     return "other"
 
 # ── sidebar ────────────────────────────────────────────────────
@@ -77,13 +80,29 @@ end_d = dt.date.today()
 start_d = end_d - dt.timedelta(days=30)
 start_d, end_d = st.sidebar.date_input("Select Date Range", (start_d, end_d))
 
+# 🧠 Top Subreddits only
+def show_top_subreddits(df: pd.DataFrame):
+    st.subheader("🧠 Top subreddits")
+    if "Subreddit" in df.columns and df["Subreddit"].notna().any():
+        st.bar_chart(df["Subreddit"].fillna("Unknown").value_counts().head(10))
+    else:
+        st.info("Subreddit column not present in this dataset.")
+
+# 📄 Fallback content display
+def show_content_sample(df: pd.DataFrame):
+    st.subheader("📄 Content sample")
+    show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"] if c in df.columns]
+    st.dataframe(df[show_cols].head(50), height=300)
+
 # ──────────────────────────────────────────────────────────────
 #  Upload Excel Mode
 # ──────────────────────────────────────────────────────────────
 if MODE == "Upload Excel":
     xl_file = st.sidebar.file_uploader("Drag and drop Excel", type="xlsx")
-    if xl_file is None: st.stop()
-    with pd.ExcelFile(xl_file) as xl: sheets = xl.sheet_names
+    if xl_file is None:
+        st.stop()
+    with pd.ExcelFile(xl_file) as xl:
+        sheets = xl.sheet_names
     sheet_choice = st.sidebar.selectbox("Sheet", ["ALL"] + sheets, index=0)
 
     dfs: List[pd.DataFrame] = []
@@ -94,7 +113,7 @@ if MODE == "Upload Excel":
                 df_s["Post_dt"] = df_s["Post Date"].map(parse_post_date)
                 dfs.append(df_s)
             else:
-                st.warning(f"Sheet ‘{sh}’ missing columns → skipped")
+                st.warning(f"Sheet '{sh}' missing columns → skipped")
 
     if not dfs:
         st.error("No valid sheets found.")
@@ -109,7 +128,10 @@ if MODE == "Upload Excel":
         st.info("No posts in selected window.")
         st.stop()
 
-    sel_buckets = st.sidebar.multiselect("Select buckets", sorted(df["Bucket"].unique()), default=sorted(df["Bucket"].unique()))
+    sel_buckets = st.sidebar.multiselect(
+        "Select buckets", sorted(df["Bucket"].unique()),
+        default=sorted(df["Bucket"].unique())
+    )
     df = df[df["Bucket"].isin(sel_buckets)]
     st.success(f"✅ {len(df)} posts after filtering")
 
@@ -119,32 +141,29 @@ if MODE == "Upload Excel":
     st.subheader("📈 Post trend over time")
     trend = (
         df.set_index("Post_dt")
-        .assign(day=lambda _d: _d.index.date)
-        .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count")
-        .fillna(0)
+          .assign(day=lambda d: d.index.date)
+          .pivot_table(
+              index="day", columns="Bucket",
+              values="Post Content", aggfunc="count"
+          )
+          .fillna(0)
     )
     st.line_chart(trend)
 
-    st.subheader("🧠 Top sources (subreddit / channel)")
-    source_col = "Subreddit" if "Subreddit" in df.columns and df["Subreddit"].notna().any() else "Username"
-    if source_col in df.columns:
-        st.bar_chart(df[source_col].fillna("Unknown").value_counts().head(10))
-    else:
-        st.info("No valid source column found.")
-
-    st.subheader("📄 Content sample")
-    show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"] if c in df.columns]
-    st.dataframe(df[show_cols].head(50), height=300)
+    show_top_subreddits(df)
+    show_content_sample(df)
 
 # ──────────────────────────────────────────────────────────────
 #  Live Reddit Pull Mode
 # ──────────────────────────────────────────────────────────────
 else:
-    phrase = st.sidebar.text_input("Search phrase (keywords, OR‑supported)", "lonely OR therapy")
+    phrase = st.sidebar.text_input(
+        "Search phrase (keywords, OR‑supported)", "lonely OR therapy"
+    )
     subreddit = st.sidebar.text_input("Subreddit (e.g. depression or all)", "depression")
     max_posts = st.sidebar.slider("Max posts to fetch", 10, 300, 50)
 
-    if st.sidebar.button("🔍 Fetch live posts"):
+    if st.sidebar.button("🔍 Fetch live posts"):
         reddit = st.session_state.get("reddit_api")
         if reddit is None:
             st.error("Reddit API not configured.")
@@ -177,15 +196,14 @@ else:
         st.subheader("📈 Post trend over time")
         trend = (
             df.set_index("Post_dt")
-            .assign(day=lambda _d: _d.index.date)
-            .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count")
-            .fillna(0)
+              .assign(day=lambda d: d.index.date)
+              .pivot_table(
+                  index="day", columns="Bucket",
+                  values="Post Content", aggfunc="count"
+              )
+              .fillna(0)
         )
         st.line_chart(trend)
 
-        st.subheader("🧠 Top sources (subreddit)")
-        st.bar_chart(df["Subreddit"].fillna("Unknown").value_counts().head(10))
-
-        st.subheader("📄 Content sample")
-        show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]
-        st.dataframe(df[show_cols].head(50), height=300)
+        show_top_subreddits(df)
+        show_content_sample(df)
