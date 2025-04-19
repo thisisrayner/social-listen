@@ -51,19 +51,21 @@ if "reddit_api" not in st.session_state and "reddit" in st.secrets:
 
 # ── bucket logic ──────────────────────────────────────────────
 BUCKET_PATTERNS: Dict[str, str] = {
-    # ... (patterns unchanged) ...
+    "self_blame": r"(hate(?:s|d)? (?:myself|me)|everyone hate(?:s|d)? me|worthless|i (?:don'?t|do not) deserve to live|i'?m a failure|blame myself|all my fault)",
+    "cost_concern": r"(can'?t afford|too expensive|cost of therapy|insurance won'?t|no money for help)",
+    "work_burnout": r"(burnt out|burned out|toxic work|overworked|study burnout|no work life balance|exhausted from work)",
+    "self_harm": r"(kill myself|end my life|suicid(?:e|al)|self[- ]?harm|cutting myself|hurting myself)",
+    "relationship_breakup": r"(break[- ]?up|dump(?:ed)?|heart ?broken|lost my (?:partner|girlfriend|boyfriend)|she left me|he left me)",
+    "friendship_drama": r"(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed)?|lost)|no friends?|friends don'?t care)",
+    "crying_distress": r"(can'?t stop crying|keep on crying|crying every night|cry myself to sleep)",
+    "depression_misery": r"(i['’]?m (so )?(depressed|miserable|numb|empty)|i feel dead inside|life is meaningless|hopeless|no reason to live|can't go on|don['’]?t want to exist|done with life)",
+    "loneliness_isolation": r"(i['’]?m (so )?(lonely|alone|isolated)|nobody (cares|loves me)|no one to talk to|feel invisible|no support system|abandoned)",
+    "family_conflict": r"(my (mom|dad|parents|family) (hate me|don['’]?t understand|abusive|arguing|don['’]?t care)|fight with (mom|dad|family)|toxic family|family pressure|neglect)",
+    "family_loss_or_absence": r"(i miss my (mom|dad|parent|family)|grew up without (a|my) (dad|mom)|orphan|parent passed away|lost (my )?(dad|mom|guardian))"
 }
 COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
 
-def tag_bucket(text: str):
-    if not isinstance(text, str):
-        return "other"
-    for name, pat in COMPILED.items():
-        if pat.search(text):
-            return name
-    return "other"
-
-# ── sidebar ────────────────────────────────────────────────────
+# ── sidebar ──────────────────────────────────────────────────── ────────────────────────────────────────────────────
 st.sidebar.header("📊 Choose Data Source")
 MODE = st.sidebar.radio("Select mode", ("Upload Excel", "Live Reddit Pull"), index=0)
 end_d = dt.date.today()
