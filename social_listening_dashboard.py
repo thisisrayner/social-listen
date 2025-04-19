@@ -40,7 +40,7 @@ def parse_post_date(txt: str) -> pd.Timestamp:
         return pd.NaT
 
 
-# ── config ────────────────────────────────────────────────────
+# ── config ───────────────────────────────────────────────────
 st.set_page_config(page_title="Shadee Live Listening", layout="wide", initial_sidebar_state="expanded")
 
 if "reddit_api" not in st.session_state and "reddit" in st.secrets:
@@ -78,7 +78,7 @@ def tag_bucket(text: str) -> str:
             return name
     return "other"
 
-# ── sidebar ────────────────────────────────────────────────────
+# ── sidebar ──────────────────────────────────────────────────
 st.sidebar.header("📊 Choose Data Source")
 MODE = st.sidebar.radio("Select mode", ("Upload Excel", "Live Reddit Pull"), index=0)
 end_d = dt.date.today()
@@ -89,11 +89,8 @@ start_d, end_d = st.sidebar.date_input("Select Date Range", (start_d, end_d))
 
 def show_top_subreddits(df: pd.DataFrame):
     st.subheader("🧠 Top subreddits")
-    if "Subreddit" in df.columns:
-        counts = df["Subreddit"].fillna("Unknown").value_counts().head(10)
-        st.bar_chart(counts)
-    else:
-        st.info("Subreddit column not present.")
+    counts = df["Subreddit"].fillna("Unknown").value_counts().head(10)
+    st.bar_chart(counts)
 
 
 def show_content_sample(df: pd.DataFrame):
@@ -168,7 +165,11 @@ if MODE == "Upload Excel":
 # ──────────────────────────────────────────────────────────────
 else:
     phrase = st.sidebar.text_input("Search phrase (OR‑supported)", "lonely OR therapy")
-    subreddit = st.sidebar.text_input("Subreddit (e.g. depression)", "depression")
+    subreddit = st.sidebar.text_input(
+        "Subreddit (e.g. depression)",
+        "depression", 
+        help="Popular subs: mentalhealth, depression, Anxiety, SuicideWatch, teenagers. Use OR to combine terms (e.g. 'depression OR anxiety')."
+    )
     max_p = st.sidebar.slider("Max posts to fetch", 10, 300, 50)
 
     if st.sidebar.button("🔍 Fetch live posts"):
