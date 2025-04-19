@@ -107,12 +107,12 @@ if MODE == "Upload Excel":
         st.stop()
 
     with pd.ExcelFile(file) as xl:
-        sheets = xl.sheet_names
-    choice = st.sidebar.selectbox("Sheet", ["ALL"] + sheets)
+        suites = xl.sheet_names
+    choice = st.sidebar.selectbox("Sheet", ["ALL"] + suites)
 
     frames: List[pd.DataFrame] = []
     with pd.ExcelFile(file) as xl:
-        for sh in (sheets if choice == "ALL" else [choice]):
+        for sh in (suites if choice == "ALL" else [choice]):
             df_s = xl.parse(sh, skiprows=2)
             if {"Post Date","Post Content"}.issubset(df_s.columns):
                 df_s = df_s.rename(columns=lambda x: x.strip())
@@ -162,9 +162,6 @@ if MODE == "Upload Excel":
 
 # ──────────────────────────────────────────────────────────────
 #  Live Reddit Pull Mode
-# ──────────────────────────────────────────────────────────────
-# ──────────────────────────────────────────────────────────────
-#  Live Reddit Pull Mode with OR‑supported subs & improved labeling
 # ──────────────────────────────────────────────────────────────
 else:
     phrase = st.sidebar.text_input(
