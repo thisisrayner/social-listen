@@ -156,7 +156,7 @@ if MODE == "Upload Excel":
     show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"] if c in df.columns]
     sample = df[show_cols].head(100).copy()
     sample.index = range(1, len(sample) + 1)
-    st.dataframe(sample, height=400)
+    st.dataframe(sample, height=600)
 
 # ──────────────────────────────────────────────────────────────
 #  Live Reddit Pull Mode
