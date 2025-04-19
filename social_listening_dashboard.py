@@ -18,8 +18,9 @@ import praw
 DATE_RE = re.compile(r"(\d{1,2}:\d{2})\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})")
 MON = {m: i for i, m in enumerate(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
 
-def parse_post_date(txt: str) -> dt.datetime | pd.NaT:
-    """Convert strings like 'Posted 05:44 13 Apr 2025' to UTC‑naive datetime."""
+def parse_post_date(txt: str):
+    """Convert strings like 'Posted 05:44 13 Apr 2025' to a `datetime` object.
+    Returns `pd.NaT` if the string cannot be parsed."""
     if not isinstance(txt, str):
         return pd.NaT
     m = DATE_RE.search(txt)
@@ -29,7 +30,7 @@ def parse_post_date(txt: str) -> dt.datetime | pd.NaT:
     hh, mm = map(int, time_s.split(":"))
     try:
         return dt.datetime(int(year), MON[mon_s], int(day), hh, mm)
-    except ValueError:
+    except Exception:
         return pd.NaT
 
 # ──────────────────────────────────────────────────────────────
