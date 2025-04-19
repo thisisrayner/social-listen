@@ -1,4 +1,3 @@
-```python
 # Shadee.Care – Social Listening Dashboard (v9 k5)
 # ---------------------------------------------------------------
 # • Excel + date + bucket filters (ALL / sheet, last 30 days default).
@@ -195,5 +194,3 @@ else:
 
         show_top_subreddits(df)
         show_content_sample(df)
-```
- 
