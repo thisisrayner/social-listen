@@ -1,10 +1,11 @@
-# Shadee.Care – Social Listening Dashboard (v9 k6)
+# Shadee.Care – Social Listening Dashboard (v9 k7)
 # ---------------------------------------------------------------
 # • Excel path unchanged (ALL + date + bucket filters).
 # • Live Reddit Pull restored: keywords, subreddit, max‑posts, fetch button.
 # • Bucket tagging improved (tight regex); clearer subreddit/channel labeling.
 # • Bucket-level trend lines and top subreddits (Excel & Reddit).
 # • Upload Excel now extracts **Subreddit** from Post URL when missing.
+# • Content sample table now loads 100 rows but initially shows ~20 rows, indexed from 1.
 # ---------------------------------------------------------------
 
 import re
@@ -153,7 +154,9 @@ if MODE == "Upload Excel":
 
     st.subheader("📄 Content sample")
     show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"] if c in df.columns]
-    st.dataframe(df[show_cols].head(20), height=400)
+    sample = df[show_cols].head(100).copy()
+    sample.index = range(1, len(sample) + 1)
+    st.dataframe(sample, height=400)
 
 # ──────────────────────────────────────────────────────────────
 #  Live Reddit Pull Mode
@@ -217,4 +220,6 @@ else:
 
         st.subheader("📄 Content sample")
         show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]
-        st.dataframe(df[show_cols].head(20), height=600)
+        sample = df[show_cols].head(100).copy()
+        sample.index = range(1, len(sample) + 1)
+        st.dataframe(sample, height=600)
