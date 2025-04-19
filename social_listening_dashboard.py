@@ -1,8 +1,8 @@
-# Shadee.Care – Social Listening Dashboard (v9 k6)
+# Shadee.Care – Social Listening Dashboard (v9 k7)
 # ---------------------------------------------------------------
 # • Excel + date + bucket filters (ALL / sheet, last 30 days default).
 # • Live Reddit Pull: keywords, subreddit, max‑posts, fetch button.
-# • Bucket tagging with regex boundaries; top subreddits (Reddit only).
+# • Bucket tagging with regex boundaries; top subreddits (Reddit only; also extracts from Excel URLs).
 # ---------------------------------------------------------------
 
 import re
@@ -18,9 +18,9 @@ import praw
 # ──────────────────────────────────────────────────────────────
 # Matches strings like "05:44 19 Apr 2025"
 DATE_RE = re.compile(r"(\d{1,2}:\d{2})\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})")
-MON = {m: i for i, m in enumerate(
-    ["Jan","Feb","Mar","Apr","May","Jun",
-     "Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
+MON = {m: i for i, m in enumerate([
+    "Jan","Feb","Mar","Apr","May","Jun",
+    "Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
 
 
 def parse_post_date(txt: str) -> pd.Timestamp:
@@ -33,7 +33,7 @@ def parse_post_date(txt: str) -> pd.Timestamp:
     if not m:
         return pd.NaT
     time_s, day, mon_s, year = m.groups()
-    hh, mm = map(int, time_s.split(":"))
+    hh, mm = map(int, time_s.split(':'))
     try:
         return pd.Timestamp(year=int(year), month=MON[mon_s], day=int(day), hour=hh, minute=mm)
     except Exception:
@@ -120,7 +120,16 @@ if MODE == "Upload Excel":
         for sh in (sheets if choice == "ALL" else [choice]):
             df_s = xl.parse(sh, skiprows=2)
             if {"Post Date","Post Content"}.issubset(df_s.columns):
+                # parse date & bucket
+                df_s = df_s.rename(columns=lambda x: x.strip())
                 df_s["Post_dt"] = df_s["Post Date"].map(parse_post_date)
+                df_s["Bucket"] = df_s["Post Content"].apply(tag_bucket)
+                # extract subreddit from URL if present
+                if "Post URL" in df_s.columns:
+                    df_s["Subreddit"] = (
+                        df_s["Post URL"].str.extract(r"reddit\.com/r/([^/]+)/", expand=False)
+                        .fillna("Unknown")
+                    )
                 frames.append(df_s)
             else:
                 st.warning(f"Sheet '{sh}' missing columns → skipped")
@@ -129,14 +138,13 @@ if MODE == "Upload Excel":
         st.error("No valid sheets.")
         st.stop()
     df = pd.concat(frames, ignore_index=True)
-    df["Bucket"] = df["Post Content"].apply(tag_bucket)
 
-    # Bucket filter before date trimming
+    # bucket filter
     buckets = sorted(df["Bucket"].unique())
     sel = st.sidebar.multiselect("Select buckets", buckets, default=buckets)
     df = df[df["Bucket"].isin(sel)]
 
-    # Date filtering
+    # date filter
     df = df.dropna(subset=["Post_dt"])
     df = df[(df["Post_dt"].dt.date >= start_d) & (df["Post_dt"].dt.date <= end_d)]
     if df.empty:
@@ -160,7 +168,7 @@ if MODE == "Upload Excel":
     show_content_sample(df)
 
 else:
-    phrase    = st.sidebar.text_input("Search phrase (OR-supported)", "lonely OR therapy")
+    phrase    = st.sidebar.text_input("Search phrase (OR‑supported)", "lonely OR therapy")
     subreddit = st.sidebar.text_input("Subreddit (e.g. depression)", "depression")
     max_p     = st.sidebar.slider("Max posts to fetch", 10, 300, 50)
 
