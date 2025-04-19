@@ -163,12 +163,21 @@ if MODE == "Upload Excel":
 # ──────────────────────────────────────────────────────────────
 #  Live Reddit Pull Mode
 # ──────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
+#  Live Reddit Pull Mode with OR‑supported subs & improved labeling
+# ──────────────────────────────────────────────────────────────
 else:
-    phrase = st.sidebar.text_input("Search phrase (OR‑supported)", "lonely OR therapy")
+    phrase = st.sidebar.text_input(
+        "Search phrase (OR‑supported)",
+        "lonely OR therapy"
+    )
     subreddit = st.sidebar.text_input(
         "Subreddit (e.g. depression)",
-        "depression", 
-        help="Popular subs: mentalhealth, depression, Anxiety, SuicideWatch, teenagers. Use OR to combine terms (e.g. 'depression OR anxiety')."
+        "depression",
+        help=(
+            "Popular subs: mentalhealth, depression, Anxiety, SuicideWatch, teenagers.  "
+            "Combine multiple subs with OR (e.g. 'depression OR anxiety')."
+        )
     )
     max_p = st.sidebar.slider("Max posts to fetch", 10, 300, 50)
 
@@ -178,35 +187,56 @@ else:
             st.error("Reddit API not configured.")
             st.stop()
 
-        st.info(f"Fetching from r/{subreddit}...")
-        posts = [
-            {
-                "Post_dt": dt.datetime.fromtimestamp(p.created_utc),
-                "Post Content": p.title + "\n\n" + (p.selftext or ""),
-                "Subreddit": p.subreddit.display_name,
-                "Platform": "reddit",
-            }
-            for p in reddit.subreddit(subreddit).search(phrase, limit=max_p)
-        ]
+        posts = []
+        # support multiple subreddits separated by OR
+        for sub in [s.strip() for s in re.split(r"\s+OR\s+", subreddit) if s.strip()]:
+            try:
+                st.info(f"Fetching from r/{sub}…")
+                for p in reddit.subreddit(sub).search(phrase, limit=max_p):
+                    content = p.title + "\n\n" + (p.selftext or "")
+                    posts.append({
+                        "Post_dt":      dt.datetime.fromtimestamp(p.created_utc),
+                        "Post Content": content,
+                        "Subreddit":    p.subreddit.display_name,
+                        "Platform":     "reddit",
+                        "Bucket":       tag_bucket(content),
+                    })
+            except Exception:
+                st.warning(f"Subreddit r/{sub} not found or inaccessible, skipped.")
 
         if not posts:
             st.warning("No posts returned.")
             st.stop()
+
         df = pd.DataFrame(posts)
-        df["Bucket"] = df["Post Content"].apply(tag_bucket)
-        df = df.dropna(subset=["Post_dt"])
         st.success(f"✅ {len(df)} posts fetched")
 
+        # Post volume by bucket
         st.subheader("📊 Post volume by bucket")
         st.bar_chart(df["Bucket"].value_counts())
 
+        # Trend over time by bucket
         st.subheader("📈 Post trend over time")
         trend = (
             df.set_index("Post_dt")
               .assign(day=lambda d: d.index.date)
-              .pivot_table(index="day", columns="Bucket", values="Post Content", aggfunc="count").fillna(0)
+              .pivot_table(
+                  index="day",
+                  columns="Bucket",
+                  values="Post Content",
+                  aggfunc="count",
+              )
+              .fillna(0)
         )
         st.line_chart(trend)
 
+        # Top subreddits
         show_top_subreddits(df)
-        show_content_sample(df)
+
+        # Content sample
+        st.subheader("📄 Content sample")
+        show_cols = [
+            c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"]
+            if c in df.columns
+        ]
+        st.dataframe(df[show_cols].head(50), height=300)
