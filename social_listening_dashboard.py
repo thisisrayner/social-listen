@@ -1,4 +1,4 @@
-# Shadee.Care – Social Listening Dashboard (v9 k7)
+# Shadee.Care – Social Listening Dashboard (v9 k7)
 # ---------------------------------------------------------------
 # • Excel + date + bucket filters (ALL / sheet, last 30 days default).
 # • Live Reddit Pull: keywords, subreddit, max‑posts, fetch button.
@@ -120,14 +120,12 @@ if MODE == "Upload Excel":
         for sh in (sheets if choice == "ALL" else [choice]):
             df_s = xl.parse(sh, skiprows=2)
             if {"Post Date","Post Content"}.issubset(df_s.columns):
-                # parse date & bucket
                 df_s = df_s.rename(columns=lambda x: x.strip())
                 df_s["Post_dt"] = df_s["Post Date"].map(parse_post_date)
                 df_s["Bucket"] = df_s["Post Content"].apply(tag_bucket)
-                # extract subreddit from URL if present
                 if "Post URL" in df_s.columns:
                     df_s["Subreddit"] = (
-                        df_s["Post URL"].str.extract(r"reddit\.com/r/([^/]+)/", expand=False)
+                        df_s["Post URL"].str.extract(r"(?:https?://)?(?:www\.)?reddit\.com/r/([^/]+)/", expand=False)
                         .fillna("Unknown")
                     )
                 frames.append(df_s)
@@ -139,12 +137,10 @@ if MODE == "Upload Excel":
         st.stop()
     df = pd.concat(frames, ignore_index=True)
 
-    # bucket filter
     buckets = sorted(df["Bucket"].unique())
     sel = st.sidebar.multiselect("Select buckets", buckets, default=buckets)
     df = df[df["Bucket"].isin(sel)]
 
-    # date filter
     df = df.dropna(subset=["Post_dt"])
     df = df[(df["Post_dt"].dt.date >= start_d) & (df["Post_dt"].dt.date <= end_d)]
     if df.empty:
