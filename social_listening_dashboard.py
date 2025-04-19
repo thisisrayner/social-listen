@@ -1,10 +1,11 @@
-# Shadee.Care – Social Listening Dashboard (v9 k9 - Session State & df_loaded Fix)
+# Shadee.Care – Social Listening Dashboard (v9 k10 - Fix SyntaxError)
 # ---------------------------------------------------------------
 # • Implemented session state for fetched data to prevent reload on widget changes.
 # • Excel path unchanged (ALL + date + bucket filters).
 # • Live Reddit Pull restored: keywords, subreddit, max‑posts, fetch button.
 # • Live YouTube Pull added: search phrase, max videos, max comments (using API).
 # • Fixed NameError by ensuring df_loaded is defined and not empty before classification.
+# • Fixed SyntaxError: 'break' outside loop in YouTube fetch by using a flag.
 # • Bucket tagging improved (tight regex); clearer subreddit/channel labeling.
 # • Bucket-level trend lines and top sources (Subreddit/Video Title).
 # • Upload Excel now extracts **Subreddit** from Post URL when missing.
@@ -27,7 +28,8 @@ import googleapiclient.discovery
 DATE_RE = re.compile(r"(\d{1,2}:\d{2})\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})")
 MON = {m: i for i, m in enumerate(
     ["Jan","Feb","Mar","Apr","May","Jun",
-     "Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
+     ["Jan","Feb","Mar","Apr","May","Jun",
+      "Jul","Aug","Sep","Oct","Nov","Dec"], 1)} # Typo fixed here
 
 
 def parse_post_date(txt: str):
@@ -106,6 +108,8 @@ if 'current_mode' not in st.session_state:
     st.session_state['current_mode'] = None
 if 'uploaded_excel_name' not in st.session_state: # To track which Excel file is loaded
      st.session_state['uploaded_excel_name'] = None
+if 'sheet_names' not in st.session_state: # To store sheet names for the selectbox
+     st.session_state['sheet_names'] = ["ALL"]
 
 
 # ───────────────────────────────────────────────────────────────
@@ -157,6 +161,7 @@ if MODE != st.session_state['current_mode']:
     st.session_state['fetched_data'] = None
     st.session_state['current_mode'] = MODE
     st.session_state['uploaded_excel_name'] = None # Clear excel state too if mode changes
+    st.session_state['sheet_names'] = ["ALL"] # Reset sheet names
     st.rerun() # Trigger a rerun to show the correct sidebar controls
 
 
@@ -177,31 +182,32 @@ if MODE == "Upload Excel":
         st.session_state['fetched_data'] = None # Clear any previous data immediately
         st.session_state['uploaded_excel_name'] = xl_file.name
         st.session_state['current_mode'] = "Upload Excel" # Set mode explicitly
+        st.session_state['sheet_names'] = ["ALL"] # Reset sheet names placeholder
 
         with st.spinner("Reading and processing Excel file..."):
             dfs: List[pd.DataFrame] = []
             try:
                 with pd.ExcelFile(xl_file) as xl:
                     sheets = xl.sheet_names
-                # Sheet choice logic - maybe move this outside the if block to allow changing sheet?
-                # For now, keeps processing tied to file upload/change
-                # sheet_choice = st.sidebar.selectbox("Sheet", ["ALL"] + sheets, index=0) # This will cause rerun
+                    st.session_state['sheet_names'] = ["ALL"] + sheets # Store actual sheet names
 
-                # Simpler approach: just load all sheets for now, then filter later if needed
-                # A more advanced approach would involve caching based on file hash + sheet choice
-
+                # Load all sheets for now, filtering will happen later using the selectbox value
                 with pd.ExcelFile(xl_file) as xl:
-                    for sh in sheets: # Load all sheets if "ALL" was intended default
+                    for sh in sheets:
                         try:
                             df_s = xl.parse(sh, skiprows=2)
                             if {"Post Date", "Post Content"}.issubset(df_s.columns):
+                                # Ensure necessary columns exist with default values if not present
                                 if "Platform" not in df_s.columns: df_s["Platform"] = "Excel"
-                                if "Subreddit" not in df_s.columns and "Post URL" in df_s.columns:
-                                    df_s["Subreddit"] = ( df_s["Post URL"].astype(str).str.extract(r"reddit\.com/r/([^/]+)/")[0].fillna("Unknown") )
-                                elif "Subreddit" not in df_s.columns:
-                                     df_s["Subreddit"] = "Unknown"
+                                if "Subreddit" not in df_s.columns:
+                                    if "Post URL" in df_s.columns:
+                                        df_s["Subreddit"] = ( df_s["Post URL"].astype(str).str.extract(r"reddit\.com/r/([^/]+)/")[0].fillna("Unknown") )
+                                    else:
+                                         df_s["Subreddit"] = "Unknown" # Default if URL also missing
 
                                 df_s["Post_dt"] = df_s["Post Date"].map(parse_post_date)
+                                # Add original sheet name for filtering later
+                                df_s['_OriginalSheet'] = sh
                                 dfs.append(df_s)
                             else:
                                 st.warning(f"Sheet ‘{sh}’ missing required columns ('Post Date', 'Post Content') → skipped")
@@ -212,12 +218,14 @@ if MODE == "Upload Excel":
                 st.error(f"Error reading Excel file: {e}")
                 st.session_state['fetched_data'] = None
                 st.session_state['uploaded_excel_name'] = None
+                st.session_state['sheet_names'] = ["ALL"]
                 st.stop()
 
             if not dfs:
                 st.error("No valid sheets or data found in the Excel file.")
                 st.session_state['fetched_data'] = None
                 st.session_state['uploaded_excel_name'] = None
+                st.session_state['sheet_names'] = ["ALL"]
                 st.stop()
 
             df_loaded = pd.concat(dfs, ignore_index=True)
@@ -243,39 +251,24 @@ if MODE == "Upload Excel":
         # Retrieve data from state
         df = st.session_state['fetched_data']
 
-        # Apply sheet selection filter if needed (re-added sheet select)
-        # This will cause reruns, but data won't be re-parsed from file
-        sheets = ["ALL"] + sorted(df["Platform"].unique() if "Platform" in df.columns else []) # Use Platform as sheet source indicator? Or needs actual sheet names?
-        # Simpler: Re-parse sheet names just for the selectbox options after file load
-        if 'sheet_names' not in st.session_state and xl_file is not None:
-            try:
-                with pd.ExcelFile(xl_file) as xl:
-                     st.session_state['sheet_names'] = ["ALL"] + xl.sheet_names
-            except Exception:
-                 st.session_state['sheet_names'] = ["ALL"] # Fallback
-        elif xl_file is None:
-             st.session_state['sheet_names'] = ["ALL"] # No file loaded
-
+        # Apply sheet selection filter (uses stored sheet names)
         sheet_choice = st.sidebar.selectbox("Sheet", st.session_state['sheet_names'], index=0)
-
-        # Apply sheet filter if not "ALL" (requires original sheet names being stored or inferred)
-        # This implementation currently loads ALL sheets on file upload. Filtering by original sheet name
-        # would require storing sheet names during loading and adding a filter here.
-        # For simplicity, the sheet select box is currently just a placeholder until that logic is added.
-        # Visualizations below will use the combined data from all processed sheets.
-        # TODO: Implement actual sheet filtering based on sheet_choice selectbox
+        if sheet_choice.upper() != "ALL" and '_OriginalSheet' in df.columns:
+             df_filtered_sheet = df[df['_OriginalSheet'] == sheet_choice].copy()
+        else:
+             df_filtered_sheet = df.copy() # Use all data if ALL or sheet column missing
 
 
-        # Apply date filtering (always happens on rerun)
-        df_filtered_date = df.dropna(subset=["Post_dt"]).copy() # Ensure valid dates before date filter
+        # Apply date filtering (always happens on rerun to df_filtered_sheet)
+        df_filtered_date = df_filtered_sheet.dropna(subset=["Post_dt"]).copy() # Ensure valid dates before date filter
         df_filtered_date = df_filtered_date[(df_filtered_date["Post_dt"].dt.date >= start_d) & (df_filtered_date["Post_dt"].dt.date <= end_d)].copy()
 
         if df_filtered_date.empty:
-            st.info("No posts in selected date window.")
-            # Don't clear fetched_data here, as changing date range might find data again
+            st.info("No posts in selected sheet and date window.")
+            # Don't clear fetched_data here, as changing date/sheet might find data again
             st.stop()
 
-        # Bucket selection (always happens on rerun)
+        # Bucket selection (always happens on rerun to df_filtered_date)
         # Get unique buckets from the date-filtered data to ensure options are relevant
         unique_buckets_in_date_range = sorted(df_filtered_date["Bucket"].unique())
         sel_buckets = st.sidebar.multiselect(
@@ -317,7 +310,7 @@ if MODE == "Upload Excel":
         st.subheader("📄 Content sample")
         if not df_filtered_buckets.empty:
             # Ensure columns exist before trying to show them
-            show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content"] if c in df_filtered_buckets.columns]
+            show_cols = [c for c in ["Post_dt", "Bucket", "Subreddit", "Platform", "Post Content", "_OriginalSheet"] if c in df_filtered_buckets.columns]
             sample = df_filtered_buckets[show_cols].head(100).copy()
             sample.index = range(1, len(sample) + 1)
             st.dataframe(sample, height=600)
@@ -492,7 +485,7 @@ elif MODE == "Live Reddit Pull":
 
 
 # ──────────────────────────────────────────────────────────────
-#  Live YouTube Pull Mode (Logic adjusted to use session state & df_loaded Fix)
+#  Live YouTube Pull Mode
 # ──────────────────────────────────────────────────────────────
 elif MODE == "Live YouTube Pull":
     st.sidebar.header("▶️ YouTube Settings")
@@ -503,6 +496,7 @@ elif MODE == "Live YouTube Pull":
         if st.session_state.get('current_mode') == "Live YouTube Pull":
              st.session_state['fetched_data'] = None
         st.stop()
+
 
     # Sidebar controls remain the same, their values persist across reruns
     yt_phrase = st.sidebar.text_input(
@@ -533,6 +527,8 @@ elif MODE == "Live YouTube Pull":
         video_count = 0
         # Initialize df_loaded *before* potential error paths or no results
         df_loaded = pd.DataFrame()
+        quota_hit = False # Flag to signal if quota was hit during processing
+
 
         with st.spinner(f"Searching YouTube for videos matching '{yt_phrase}' and fetching comments..."):
             try:
@@ -555,6 +551,9 @@ elif MODE == "Live YouTube Pull":
 
                 # 2. Fetch comments for each video
                 for video_id in video_ids:
+                    if quota_hit: # Check flag before processing the next video
+                         break # Exit the outer video_id loop if quota was hit
+
                     video_count += 1
                     try:
                         # Get video title for source context
@@ -568,11 +567,10 @@ elif MODE == "Live YouTube Pull":
 
                         # Use a temporary spinner for each video fetch
                         with st.spinner(f"Fetching comments for video {video_count}/{len(video_ids)}: '{video_title}' ({comments_fetched_count}/{max_comments_per_video} comments fetched)..."):
-                            while True:
+                            while True: # Loop for comment pagination
                                 comments_response = youtube.commentThreads().list(
                                     part="snippet",
                                     videoId=video_id,
-                                    # order="relevance", # Or "time"
                                     textFormat="plainText",
                                     maxResults=100, # API max results per page is 100
                                     pageToken=next_page_token
@@ -587,19 +585,21 @@ elif MODE == "Live YouTube Pull":
                                         "Source": video_title, # Use video title as source
                                         "Video Title": video_title, # Keep video title explicitly
                                         "Video URL": video_url,
-                                        "Comment Author": comment.get('authorDisplayName', 'Anonymous'), # Add author (consider anonymization)
+                                        "Comment Author": comment.get('authorDisplayName', 'Anonymous'),
                                     })
                                     comments_fetched_count += 1
                                     # Update spinner text using the spinner object
-                                    st.session_state._spinner.update(text=f"Fetching comments for video {video_count}/{len(video_ids)}: '{video_title}' ({comments_fetched_count}/{max_comments_per_video} comments fetched)...")
+                                    # Check if _spinner exists before updating
+                                    if '_spinner' in st.session_state and st.session_state._spinner:
+                                        st.session_state._spinner.update(text=f"Fetching comments for video {video_count}/{len(video_ids)}: '{video_title}' ({comments_fetched_count}/{max_comments_per_video} comments fetched)...")
 
 
                                     if comments_fetched_count >= max_comments_per_video:
-                                        break # Stop fetching comments for this video if limit reached
+                                        break # Break the inner While True loop for comments if limit reached
 
                                 next_page_token = comments_response.get('nextPageToken')
                                 if not next_page_token or comments_fetched_count >= max_comments_per_video:
-                                    break # Stop pagination if no more pages or comment limit reached
+                                    break # Break the inner While True loop if no more pages or limit reached
 
                         if comments_fetched_count == 0:
                              st.info(f"No public comments found for video: '{video_title}'")
@@ -611,28 +611,26 @@ elif MODE == "Live YouTube Pull":
                          elif e.resp.status == 429:
                               st.error("YouTube API Quota Exceeded. Please try again tomorrow.")
                               st.session_state['fetched_data'] = None # Clear data state on quota error
-                              # Break outer loop immediately if quota hit during comment fetching
-                              video_ids = [] # Clear video_ids to stop outer loop
-                              break
+                              quota_hit = True # Set the flag
+                              break # Break the INNER while True loop for comments
                          else:
                              st.error(f"API error fetching comments for video ID {video_id} ('{video_title}'): {e}")
                     except Exception as e:
                         st.error(f"An unexpected error occurred fetching comments for video ID {video_id} ('{video_title}'): {e}")
 
-                 # Check if quota was hit in the inner loop to break the outer loop
-                if not video_ids:
-                     break
-
-
+            # This exception block catches errors from the video search or the outer for loop logic
             except googleapiclient.errors.GoogleJsonResponseError as e:
                 if e.resp.status == 429:
                     st.error("YouTube API Quota Exceeded during video search. Please try again tomorrow.")
+                    st.session_state['fetched_data'] = None
                 else:
                     st.error(f"API error during video search: {e}")
-                st.session_state['fetched_data'] = None # Clear data state on error
+                # No need for quota_hit = True here as the outer loop logic is handled above
+                # and the error is displayed. st.stop() might be considered here, but letting
+                # the code flow to the empty check might be fine.
             except Exception as e:
                 st.error(f"An unexpected error occurred during video search: {e}")
-                st.session_state['fetched_data'] = None # Clear data state on error
+                st.session_state['fetched_data'] = None
             finally:
                  # Ensure spinner is cleared
                  if '_spinner' in st.session_state and st.session_state._spinner:
