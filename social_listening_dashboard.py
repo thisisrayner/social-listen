@@ -1,4 +1,4 @@
-# Shadee.Care – Social Listening Dashboard (v9 k10 - Clickable URLs)
+# Shadee.Care – Social Listening Dashboard (v9 k11 - Fix break outside loop error)
 # ---------------------------------------------------------------
 # • Implemented session state for fetched data to prevent reload on widget changes.
 # • Excel path unchanged (ALL + date + bucket filters).
@@ -9,7 +9,8 @@
 # • Bucket-level trend lines and top sources (Subreddit/Video Title).
 # • Upload Excel now extracts **Subreddit** from Post URL when missing.
 # • Content sample table now loads 100 rows but initially shows ~20 rows, indexed from 1.
-# • **Post/Video URLs in sample table are now clickable links.**
+# • Post/Video URLs in sample table are now clickable links.
+# • **Fixed SyntaxError: 'break' outside loop in YouTube fetch.**
 # ---------------------------------------------------------------
 
 import re
@@ -19,7 +20,7 @@ from typing import Dict, List
 
 import pandas as pd
 import streamlit as st
-import streamlit.column_config as st_column_config # Added for clickable links
+import streamlit.column_config as st_column_config
 import praw
 import googleapiclient.discovery
 
@@ -108,6 +109,8 @@ if 'current_mode' not in st.session_state:
     st.session_state['current_mode'] = None
 if 'uploaded_excel_name' not in st.session_state: # To track which Excel file is loaded
      st.session_state['uploaded_excel_name'] = None
+if '_spinner' not in st.session_state: # To store the spinner object for dynamic updates
+     st.session_state._spinner = st.empty()
 
 
 # ───────────────────────────────────────────────────────────────
@@ -159,8 +162,7 @@ if MODE != st.session_state['current_mode']:
     st.session_state['fetched_data'] = None
     st.session_state['current_mode'] = MODE
     st.session_state['uploaded_excel_name'] = None # Clear excel state too if mode changes
-    # Preserve input values for the *new* mode if they exist in state from a previous run
-    # (This is implicitly handled by using session_state.get() in the input widgets below)
+    # Preserve input values for the *new* mode is handled by using session_state.get() below
     st.rerun() # Trigger a rerun to show the correct sidebar controls
 
 
@@ -193,9 +195,6 @@ if MODE == "Upload Excel":
             try:
                 with pd.ExcelFile(xl_file) as xl:
                     sheets = xl.sheet_names
-
-                # Simpler approach: just load all sheets for now, then filter later if needed
-                # A more advanced approach would involve caching based on file hash + sheet choice
 
                 with pd.ExcelFile(xl_file) as xl:
                     for sh in sheets: # Load all sheets if "ALL" was intended default
@@ -565,6 +564,7 @@ elif MODE == "Live YouTube Pull":
         video_count = 0
         # Initialize df_loaded *before* potential error paths or no results
         df_loaded = pd.DataFrame()
+        quota_hit = False # Initialize the quota hit flag
 
 
         with st.spinner(f"Searching YouTube for videos matching '{yt_phrase}' and fetching comments..."):
@@ -587,7 +587,10 @@ elif MODE == "Live YouTube Pull":
                 st.info(f"Found {len(video_ids)} videos. Fetching comments (max ~{max_comments_per_video} per video)...")
 
                 # 2. Fetch comments for each video
-                for video_id in video_ids:
+                for video_id in video_ids: # Outer loop: Iterate through videos
+                    if quota_hit: # Check flag at the start of each outer loop iteration
+                         break # Exit outer loop if quota was hit in a previous iteration
+
                     video_count += 1
                     try:
                         # Get video title and URL for source context
@@ -602,81 +605,100 @@ elif MODE == "Live YouTube Pull":
                         # Use a temporary spinner for each video fetch
                         # Store spinner object in state to update its text dynamically
                         spinner_text = f"Fetching comments for video {video_count}/{len(video_ids)}: '{video_title}' ({comments_fetched_count}/{max_comments_per_video} comments fetched)..."
-                        if '_spinner' not in st.session_state or not st.session_state._spinner:
-                             st.session_state._spinner = st.empty() # Use an empty container for dynamic updates
+                        # Ensure spinner container exists
+                        if '_spinner_container' not in st.session_state or st.session_state._spinner_container is None:
+                             st.session_state._spinner_container = st.empty()
 
-                        st.session_state._spinner.info(spinner_text)
-
-
-                        while True:
-                            comments_response = youtube.commentThreads().list(
-                                part="snippet",
-                                videoId=video_id,
-                                textFormat="plainText",
-                                maxResults=100, # API max results per page is 100
-                                pageToken=next_page_token
-                            ).execute()
-
-                            for item in comments_response.get('items', []):
-                                comment = item['snippet']['topLevelComment']['snippet']
-                                comments_list.append({
-                                    "Post_dt": dt.datetime.strptime(comment['publishedAt'], "%Y-%m-%dT%H:%M:%SZ"),
-                                    "Post Content": comment['textDisplay'],
-                                    "Platform": "youtube",
-                                    "Source": video_title, # Use video title as source
-                                    "Video Title": video_title, # Keep video title explicitly
-                                    "Video URL": video_url,
-                                    "Comment Author": comment.get('authorDisplayName', 'Anonymous'),
-                                })
-                                comments_fetched_count += 1
-                                # Update spinner text
-                                st.session_state._spinner.info(f"Fetching comments for video {video_count}/{len(video_ids)}: '{video_title}' ({comments_fetched_count}/{max_comments_per_video} comments fetched)...")
+                        st.session_state._spinner_container.info(spinner_text)
 
 
-                                if comments_fetched_count >= max_comments_per_video:
-                                    break # Stop fetching comments for this video if limit reached
+                        while True: # Inner loop: Iterate through comment pages for one video
+                            try:
+                                comments_response = youtube.commentThreads().list(
+                                    part="snippet",
+                                    videoId=video_id,
+                                    textFormat="plainText",
+                                    maxResults=100, # API max results per page is 100
+                                    pageToken=next_page_token
+                                ).execute()
 
-                            next_page_token = comments_response.get('nextPageToken')
-                            if not next_page_token or comments_fetched_count >= max_comments_per_video:
-                                break # Stop pagination if no more pages or comment limit reached
+                                for item in comments_response.get('items', []):
+                                    comment = item['snippet']['topLevelComment']['snippet']
+                                    comments_list.append({
+                                        "Post_dt": dt.datetime.strptime(comment['publishedAt'], "%Y-%m-%dT%H:%M:%SZ"),
+                                        "Post Content": comment['textDisplay'],
+                                        "Platform": "youtube",
+                                        "Source": video_title, # Use video title as source
+                                        "Video Title": video_title, # Keep video title explicitly
+                                        "Video URL": video_url,
+                                        "Comment Author": comment.get('authorDisplayName', 'Anonymous'),
+                                    })
+                                    comments_fetched_count += 1
+                                    # Update spinner text using the spinner container
+                                    st.session_state._spinner_container.info(f"Fetching comments for video {video_count}/{len(video_ids)}: '{video_title}' ({comments_fetched_count}/{max_comments_per_video} comments fetched)...")
+
+
+                                    if comments_fetched_count >= max_comments_per_video:
+                                        break # Break inner while loop if comment limit reached
+
+                                next_page_token = comments_response.get('nextPageToken')
+                                if not next_page_token:
+                                    break # Break inner while loop if no more pages
+
+                            except googleapiclient.errors.GoogleJsonResponseError as e:
+                                if e.resp.status == 429:
+                                    st.error("YouTube API Quota Exceeded. Please try again tomorrow.")
+                                    st.session_state['fetched_data'] = None
+                                    quota_hit = True # Set the flag
+                                    break # Break inner while loop
+                                # ... handle other errors within the inner loop ...
+                                elif e.resp.status in [403, 404]:
+                                    st.session_state._spinner_container.warning(f"Could not fetch comments for video ID {video_id} ('{video_title}'): Comments disabled, video private/deleted, or permission issue.")
+                                    break # Break inner loop for this video if comments are unavailable/permissions issue
+                                else:
+                                    st.error(f"API error fetching comments page for video ID {video_id} ('{video_title}'): {e}")
+                                    break # Break inner loop on unexpected API errors for this video
+                            except Exception as e:
+                                st.error(f"An unexpected error occurred fetching comments page for video ID {video_id} ('{video_title}'): {e}")
+                                break # Break inner loop on unexpected errors
+
+                        # Inner while loop finishes here. If quota_hit is True, the next iteration of the outer loop will catch it.
 
                         if comments_fetched_count == 0:
-                             st.session_state._spinner.info(f"No public comments found for video: '{video_title}'") # Update spinner
-                             #st.info(f"No public comments found for video: '{video_title}'") # Original info message
+                             st.session_state._spinner_container.info(f"No public comments found for video: '{video_title}'")
+
 
                     except googleapiclient.errors.GoogleJsonResponseError as e:
-                         if e.resp.status in [403, 404]:
-                             st.session_state._spinner.warning(f"Could not fetch comments for video ID {video_id} ('{video_title}'): Comments disabled, video private/deleted, or permission issue.") # Update spinner
-                             #st.warning(f"Could not fetch comments for video ID {video_id} ('{video_title}'): Comments disabled, video private/deleted, or permission issue.") # Original warning
-                         elif e.resp.status == 429:
+                         # This catches errors for a specific video fetch call outside the inner loop
+                         # (e.g., error getting video title, or a video ID is invalid), *not* the comment fetching errors which are caught above.
+                         if e.resp.status == 429: # Should already be caught by inner block, but defensive check
                               st.error("YouTube API Quota Exceeded. Please try again tomorrow.")
-                              st.session_state['fetched_data'] = None # Clear data state on quota error
-                              # Break outer loop immediately if quota hit during comment fetching
-                              video_ids = [] # Clear video_ids to stop outer loop
-                              break # Break inner loop
+                              st.session_state['fetched_data'] = None
+                              quota_hit = True # Set the flag
+                              # Don't break here, let the outer loop check the flag at the start of its next iteration
+                         elif e.resp.status in [403, 404]:
+                             st.warning(f"Could not process video ID {video_id}: {e.resp.status} error (private/deleted/etc. during title fetch).")
                          else:
-                             st.error(f"API error fetching comments for video ID {video_id} ('{video_title}'): {e}")
+                             st.error(f"API error processing video ID {video_id}: {e}")
+
                     except Exception as e:
-                        st.error(f"An unexpected error occurred fetching comments for video ID {video_id} ('{video_title}'): {e}")
+                         st.error(f"An unexpected error occurred processing video ID {video_id}: {e}")
 
-                 # Check if quota was hit in the inner loop to break the outer loop
-                if not video_ids:
-                     break # Break outer loop if inner loop broke due to quota
-
+                 # Outer for loop finishes here.
 
             except googleapiclient.errors.GoogleJsonResponseError as e:
                 if e.resp.status == 429:
                     st.error("YouTube API Quota Exceeded during video search. Please try again tomorrow.")
                 else:
                     st.error(f"API error during video search: {e}")
-                st.session_state['fetched_data'] = None # Clear data state on error
+                st.session_state['fetched_data'] = None
             except Exception as e:
                 st.error(f"An unexpected error occurred during video search: {e}")
-                st.session_state['fetched_data'] = None # Clear data state on error
+                st.session_state['fetched_data'] = None
             finally:
                  # Ensure spinner is cleared
-                 if '_spinner' in st.session_state and st.session_state._spinner:
-                    st.session_state._spinner.empty()
+                 if '_spinner_container' in st.session_state and st.session_state._spinner_container:
+                    st.session_state._spinner_container.empty()
 
 
         # --- Check data *after* fetching and before classification ---
@@ -693,7 +715,7 @@ elif MODE == "Live YouTube Pull":
         # --- Classification happens here if df_loaded is NOT empty ---
         # Ensure 'Post Content' column exists before applying tag_bucket
         if "Post Content" in df_loaded.columns:
-             with st.spinner("Classifying content..."):
+             with st.spinner("Classifying content..."): # Use a new spinner for classification
                   df_loaded["Bucket"] = df_loaded["Post Content"].apply(tag_bucket)
         else:
              st.warning("No 'Post Content' column found after fetching to classify.")
