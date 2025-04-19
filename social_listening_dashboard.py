@@ -59,7 +59,14 @@ st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
 st.sidebar.header("Choose Data Source")
 source_mode = st.sidebar.radio("Select mode", ["🔴 Live Reddit Pull", "📁 Upload Excel"], horizontal=False)
 
+# ---------- Initialize shared df ---------- #
 df = None
+
+# ---------- Date Range Controls (now global top-right) ---------- #
+st.sidebar.subheader("Filter Options")
+date_placeholder = st.empty()
+def_range = [dt.date.today() - dt.timedelta(days=30), dt.date.today()]
+date_range = date_placeholder.date_input("📅 Select Date Range", def_range)
 
 if source_mode == "🔴 Live Reddit Pull":
     query = st.sidebar.text_input("Search phrase (keywords, OR-supported)", "lonely OR therapy")
@@ -133,19 +140,13 @@ elif source_mode == "📁 Upload Excel":
 if df is not None:
     st.success(f"✅ Loaded {len(df)} posts for analysis")
 
-    # Interactive filters
-    st.sidebar.subheader("Filter Options")
-    unique_buckets = df["Bucket"].unique().tolist()
-    selected_buckets = st.sidebar.multiselect("Select Buckets", unique_buckets, default=unique_buckets)
-
-    min_date = df["Post_dt"].min()
-    max_date = df["Post_dt"].max()
-    date_range = st.sidebar.date_input("Select Date Range", [min_date, max_date])
-
+    # Apply date + bucket filters
     if len(date_range) == 2:
         start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
         df = df[df["Post_dt"].between(start_date, end_date)]
 
+    unique_buckets = df["Bucket"].unique().tolist()
+    selected_buckets = st.sidebar.multiselect("Select Buckets", unique_buckets, default=unique_buckets)
     df = df[df["Bucket"].isin(selected_buckets)]
 
     st.subheader("📊 Post volume by bucket")
