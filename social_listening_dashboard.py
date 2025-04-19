@@ -56,8 +56,13 @@ BUCKET_PATTERNS: Dict[str, str] = {
     "relationship_breakup": r"\b(break[- ]?up|dump(?:ed)?|heart ?broken|lost my (?:partner|girlfriend|boyfriend)|she left me|he left me)\b",
     "friendship_drama": r"\b(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed)?|lost)|no friends?|friends don'?t care)\b",
     "crying_distress": r"\b(can'?t stop crying|keep on crying|crying every night|cry myself to sleep)\b",
+    "depression_misery": r"\b(i['’]?m (so )?(depressed|miserable|numb|empty)|i feel dead inside|life is meaningless|hopeless|no reason to live|can't go on|don['’]?t want to exist|done with life)\b",
+    "loneliness_isolation": r"\b(i['’]?m (so )?(lonely|alone|isolated)|nobody (cares|loves me)|no one to talk to|feel invisible|no support system|abandoned)\b",
+    "family_conflict": r"\b(my (mom|dad|parents|family) (hate me|don['’]?t understand|abusive|arguing|don['’]?t care)|fight with (mom|dad|family)|toxic family|family pressure|neglect)\b",
+    "family_loss_or_absence": r"\b(i miss my (mom|dad|parent|family)|grew up without (a|my) (dad|mom)|orphan|parent passed away|lost (my )?(dad|mom|guardian))\b"
 }
 COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
+
 
 def tag_bucket(text: str):
     if not isinstance(text, str): return "other"
