@@ -1,8 +1,7 @@
-# Shadee.Care – Social Listening Dashboard (v9e)
+# Shadee.Care – Social Listening Dashboard (v9f)
 # -------------------------------------------------------------
-# • Date‐range filter now works for multi‑day spans
-# • Post trend line chart groups by calendar day (Post_date)
-# • YouTube / any non‑Reddit rows preserved
+# • Simplified: date‑range picker removed (full data shown)
+# • Fixed indentation / duplicate lines causing runtime error
 # -------------------------------------------------------------
 
 import re
@@ -52,26 +51,18 @@ def tag_bucket(txt: str) -> str:
     return "other"
 
 # ──────────────────────────────────────────────────────────────
-#  Sidebar – data source (date range removed for simplicity)
+#  Sidebar – data source (no date range)
 # ──────────────────────────────────────────────────────────────
 st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
 
 st.sidebar.header("Choose Data Source")
 source_mode = st.sidebar.radio("Select mode", ["🔴 Live Reddit Pull", "📁 Upload Excel"])
 
-st.title("🔴 Shadee.Care – Reddit Live + Excel Social Listening Dashboard")
-
-st.sidebar.header("Choose Data Source")
-source_mode = st.sidebar.radio("Select mode", ["🔴 Live Reddit Pull", "📁 Upload Excel"])
-
-def_start = dt.date.today() - dt.timedelta(days=30)
-start_date, end_date = st.date_input("📅 Select Date Range", [def_start, dt.date.today()])
+df = None  # will hold dataframe after load
 
 # ──────────────────────────────────────────────────────────────
 #  Load data (df)
 # ──────────────────────────────────────────────────────────────
-df = None
-
 if source_mode.startswith("🔴"):
     query = st.sidebar.text_input("Search phrase", "lonely OR therapy")
     subr = st.sidebar.text_input("Subreddit", "depression")
@@ -107,18 +98,21 @@ else:
             df["Post_dt"] = pd.Timestamp.now()
 
 # ──────────────────────────────────────────────────────────────
-#  Enrich + filter
+#  Enrich, bucket‑tag and visualise
 # ──────────────────────────────────────────────────────────────
 if df is not None and not df.empty:
     df["Post_dt"] = pd.to_datetime(df["Post_dt"], errors="coerce")
     df["Post_date"] = df["Post_dt"].dt.floor("D")
+
     if "Bucket" not in df.columns:
         df["Bucket"] = df["Post Content"].fillna("*").apply(tag_bucket)
 
-    # --- bucket selector (no date filter) ---
-sel_buckets = st.sidebar.multiselect("Select buckets", df["Bucket"].unique().tolist(), default=df["Bucket"].unique().tolist())
-df = df[df["Bucket"].isin(sel_buckets)]
-    sel_buckets = st.sidebar.multiselect("Select buckets", df["Bucket"].unique().tolist(), default=df["Bucket"].unique().tolist())
+    # bucket selector (no date filter)
+    sel_buckets = st.sidebar.multiselect(
+        "Select buckets",
+        options=df["Bucket"].unique().tolist(),
+        default=df["Bucket"].unique().tolist(),
+    )
     df = df[df["Bucket"].isin(sel_buckets)]
 
     st.success(f"✅ {len(df)} posts after filtering")
@@ -136,6 +130,9 @@ df = df[df["Bucket"].isin(sel_buckets)]
         st.bar_chart(df["Subreddit"].value_counts().head(10))
 
     st.subheader("📄 Content sample")
-    st.dataframe(df[[c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]].head(30), height=260)
+    st.dataframe(
+        df[[c for c in ["Post_dt", "Bucket", "Subreddit", "Post Content"] if c in df.columns]].head(30),
+        height=260,
+    )
 
-st.caption("© 2025 Shadee.Care • Live Reddit & Excel dashboard (v9e)")
+st.caption("© 2025 Shadee.Care • Live Reddit & Excel dashboard (v9f)")
