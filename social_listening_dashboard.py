@@ -49,13 +49,13 @@ if "reddit_api" not in st.session_state and "reddit" in st.secrets:
 
 # ── bucket logic ───────────────────────────────────────────────
 BUCKET_PATTERNS: Dict[str, str] = {
-    "self_blame": r"\b(hate(?:s|d)? (?:myself|me)|everyone hate(?:s|d)? me|worthless|i (?:don'?t|do not) deserve to live|i'?m a failure)\b",
-    "cost_concern": r"\b(can'?t afford|too expensive|cost of therapy|insurance won'?t)\b",
-    "work_burnout": r"\b(burnt out|burned out|toxic work|overworked|study burnout)\b",
-    "self_harm": r"\b(kill myself|end my life|suicid(?:e|al)|self[- ]?harm)\b",
-    "relationship_breakup": r"\b(break[- ]?up|dump(?:ed)?|heart ?broken|lost my (?:partner|girlfriend|boyfriend))\b",
-    "friendship_drama": r"\b(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed)?|lost)|no friends?)\b",
-    "crying_distress": r"\b(can'?t stop crying|keep on crying)\b",
+    "self_blame": r"\b(hate(?:s|d)? (?:myself|me)|everyone hate(?:s|d)? me|worthless|i (?:don'?t|do not) deserve to live|i'?m a failure|blame myself|all my fault)\b",
+    "cost_concern": r"\b(can'?t afford|too expensive|cost of therapy|insurance won'?t|no money for help)\b",
+    "work_burnout": r"\b(burnt out|burned out|toxic work|overworked|study burnout|no work life balance|exhausted from work)\b",
+    "self_harm": r"\b(kill myself|end my life|suicid(?:e|al)|self[- ]?harm|cutting myself|hurting myself)\b",
+    "relationship_breakup": r"\b(break[- ]?up|dump(?:ed)?|heart ?broken|lost my (?:partner|girlfriend|boyfriend)|she left me|he left me)\b",
+    "friendship_drama": r"\b(friend(?:ship)? (?:ignore(?:d)?|ghost(?:ed)?|lost)|no friends?|friends don'?t care)\b",
+    "crying_distress": r"\b(can'?t stop crying|keep on crying|crying every night|cry myself to sleep)\b",
 }
 COMPILED = {name: re.compile(pat, re.I) for name, pat in BUCKET_PATTERNS.items()}
 
